@@ -73,6 +73,9 @@ export function CreateTicketForm({
   // Property dan Area sengaja dibuat independen. Property hanya memberi
   // konteks hotel, sedangkan Area selalu menampilkan seluruh master area aktif.
   const availableAreas = areas;
+  const reporterDepartment =
+    departments.find((department) => department.id === profile.department_id)?.name ??
+    "Department belum ditetapkan";
 
   useEffect(() => {
     const newPreviews =
@@ -280,6 +283,13 @@ export function CreateTicketForm({
     event.preventDefault();
     setMessage(null);
 
+    if (!profile.department_id) {
+      setMessage(
+        "Department akun Anda belum ditetapkan. Hubungi ADMIN sebelum membuat ticket."
+      );
+      return;
+    }
+
     if (
       selectedFiles.length ===
       0
@@ -337,22 +347,18 @@ export function CreateTicketForm({
             "category_id"
           ) || ""
         ),
-        department_id: String(
-          form.get(
-            "department_id"
-          ) || ""
-        ),
         property_id:
           String(
             form.get(
               "property_id"
             ) || ""
           ) || null,
-        area_id: String(
-          form.get(
-            "area_id"
-          ) || ""
-        ),
+        area_id:
+          String(
+            form.get(
+              "area_id"
+            ) || ""
+          ) || null,
         location:
           String(
             form.get(
@@ -486,6 +492,12 @@ export function CreateTicketForm({
         </div>
       )}
 
+      {!profile.department_id && (
+        <div className="alert alert-error">
+          Department akun Anda belum ditetapkan. Hubungi ADMIN agar department di profile user diisi terlebih dahulu.
+        </div>
+      )}
+
       <div className="form-grid">
         <div className="form-field-full">
           <label className="label">
@@ -554,47 +566,25 @@ export function CreateTicketForm({
 
         <div>
           <label className="label">
-            Department *
+            Department
           </label>
 
-          <select
-            className="select"
-            name="department_id"
-            required
-            defaultValue={
-              profile.department_id ??
-              ""
-            }
-          >
-            <option
-              value=""
-              disabled
-            >
-              Pilih department
-            </option>
+          <input
+            className="input"
+            type="text"
+            value={reporterDepartment}
+            readOnly
+            aria-readonly="true"
+          />
 
-            {departments.map(
-              (department) => (
-                <option
-                  key={
-                    department.id
-                  }
-                  value={
-                    department.id
-                  }
-                >
-                  {
-                    department.name
-                  }
-                </option>
-              )
-            )}
-          </select>
+          <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>
+            Otomatis mengikuti department yang terdaftar pada akun Anda.
+          </div>
         </div>
 
         <div>
           <label className="label">
-            Property <span className="muted">(optional)</span>
+            Property <span className="muted">(opsional)</span>
           </label>
 
           <select
@@ -603,7 +593,7 @@ export function CreateTicketForm({
             value={selectedProperty}
             onChange={(event) => setSelectedProperty(event.target.value)}
           >
-            <option value="">Tidak ditentukan / area umum</option>
+            <option value="">Tidak ditentukan</option>
             {properties.map((property) => (
               <option key={property.id} value={property.id}>
                 {property.name}
@@ -617,19 +607,16 @@ export function CreateTicketForm({
 
         <div>
           <label className="label">
-            Area *
+            Area <span className="muted">(opsional)</span>
           </label>
 
           <select
             className="select"
             name="area_id"
-            required
             value={selectedArea}
             onChange={(event) => setSelectedArea(event.target.value)}
           >
-            <option value="" disabled>
-              Pilih area
-            </option>
+            <option value="">Tidak ditentukan</option>
             {availableAreas.map((area) => (
               <option key={area.id} value={area.id}>
                 {area.name}
@@ -637,13 +624,13 @@ export function CreateTicketForm({
             ))}
           </select>
           <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>
-            Semua area tetap tersedia meskipun Property tidak dipilih.
+            Opsional. Pilih area hanya jika lokasi problem perlu diperjelas.
           </div>
         </div>
 
         <div className="form-field-full">
           <label className="label">
-            Location Detail
+            Location Detail <span className="muted">(opsional)</span>
           </label>
 
           <input
@@ -853,7 +840,7 @@ export function CreateTicketForm({
         <button
           className="btn btn-primary"
           type="submit"
-          disabled={busy}
+          disabled={busy || !profile.department_id}
         >
           {busy
             ? "Submitting..."

@@ -51,7 +51,6 @@ export function CreateTicketPage({
         supabase
           .from("departments")
           .select("id,name")
-          .eq("is_active", true)
           .order("name"),
         supabase
           .from("ticket_categories")

@@ -39,3 +39,6 @@ Panel Quick Actions pada dashboard admin diubah menjadi Recent Updates. Data dia
 
 ## V5.2 — Flexible Property & Area
 Run `supabase/upgrade_helpdesk_v5_2.sql` after V5.1. Property remains optional and Area becomes a global master independent from Property.
+
+## V5.3
+Run `supabase/upgrade_helpdesk_v5_3.sql` after `upgrade_helpdesk_v5_2.sql` to enforce reporter department automatically from the user's profile.

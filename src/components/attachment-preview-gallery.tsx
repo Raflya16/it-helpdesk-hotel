@@ -1,5 +1,11 @@
-import { useEffect, useState } from "react";
 import {
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  Download,
+  File,
   ImageIcon,
   Play,
   X,
@@ -22,6 +28,11 @@ export function AttachmentPreviewGallery({
 }: Props) {
   const [active, setActive] =
     useState<Attachment | null>(null);
+
+  const [
+    downloading,
+    setDownloading,
+  ] = useState(false);
 
   useEffect(() => {
     function handleEscape(
@@ -48,7 +59,18 @@ export function AttachmentPreviewGallery({
   function formatFileSize(
     bytes: number
   ) {
-    if (bytes < 1024 * 1024) {
+    if (!bytes) {
+      return "0 KB";
+    }
+
+    if (bytes < 1024) {
+      return `${bytes} B`;
+    }
+
+    if (
+      bytes <
+      1024 * 1024
+    ) {
       return `${(
         bytes / 1024
       ).toFixed(1)} KB`;
@@ -61,7 +83,98 @@ export function AttachmentPreviewGallery({
     ).toFixed(1)} MB`;
   }
 
-  if (attachments.length === 0) {
+  async function handleDownload(
+    attachment: Attachment
+  ) {
+    if (
+      downloading ||
+      !attachment.url
+    ) {
+      return;
+    }
+
+    setDownloading(true);
+
+    try {
+      const response =
+        await fetch(
+          attachment.url
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          "File gagal diambil."
+        );
+      }
+
+      const blob =
+        await response.blob();
+
+      const objectUrl =
+        URL.createObjectURL(
+          blob
+        );
+
+      const link =
+        document.createElement(
+          "a"
+        );
+
+      link.href =
+        objectUrl;
+
+      link.download =
+        attachment.file_name ||
+        "attachment";
+
+      document.body.appendChild(
+        link
+      );
+
+      link.click();
+      link.remove();
+
+      URL.revokeObjectURL(
+        objectUrl
+      );
+    } catch (error) {
+      console.error(
+        "Download attachment failed:",
+        error
+      );
+
+      /*
+       * Fallback jika browser
+       * memblokir blob download.
+       */
+      const link =
+        document.createElement(
+          "a"
+        );
+
+      link.href =
+        attachment.url;
+
+      link.target =
+        "_blank";
+
+      link.rel =
+        "noopener noreferrer";
+
+      document.body.appendChild(
+        link
+      );
+
+      link.click();
+      link.remove();
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  if (
+    attachments.length === 0
+  ) {
     return (
       <div className="ticket-media-empty">
         Tidak ada attachment.
@@ -88,7 +201,9 @@ export function AttachmentPreviewGallery({
               <button
                 type="button"
                 className="ticket-media-card"
-                key={attachment.id}
+                key={
+                  attachment.id
+                }
                 onClick={() =>
                   setActive(
                     attachment
@@ -168,14 +283,18 @@ export function AttachmentPreviewGallery({
         >
           <div
             className="ticket-media-modal-content"
-            onClick={(event) =>
+            onClick={(
+              event
+            ) =>
               event.stopPropagation()
             }
           >
             <div className="ticket-media-modal-header">
               <div>
                 <strong>
-                  {active.file_name}
+                  {
+                    active.file_name
+                  }
                 </strong>
 
                 <span>
@@ -185,16 +304,77 @@ export function AttachmentPreviewGallery({
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setActive(null)
-                }
-                className="ticket-media-close"
-                aria-label="Close"
+              <div
+                style={{
+                  display:
+                    "flex",
+                  alignItems:
+                    "center",
+                  gap: 8,
+                }}
               >
-                <X size={20} />
-              </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void handleDownload(
+                      active
+                    )
+                  }
+                  disabled={
+                    downloading
+                  }
+                  title="Download attachment"
+                  style={{
+                    height: 40,
+                    padding:
+                      "0 14px",
+                    border:
+                      "1px solid #dbe2ea",
+                    borderRadius: 10,
+                    background:
+                      "#ffffff",
+                    color:
+                      "#172033",
+                    cursor:
+                      downloading
+                        ? "not-allowed"
+                        : "pointer",
+                    display:
+                      "inline-flex",
+                    alignItems:
+                      "center",
+                    justifyContent:
+                      "center",
+                    gap: 7,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    opacity:
+                      downloading
+                        ? 0.6
+                        : 1,
+                  }}
+                >
+                  <Download
+                    size={17}
+                  />
+
+                  {downloading
+                    ? "Downloading..."
+                    : "Download"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActive(null)
+                  }
+                  className="ticket-media-close"
+                  aria-label="Close"
+                  title="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="ticket-media-modal-viewer">
@@ -202,7 +382,9 @@ export function AttachmentPreviewGallery({
                 "image/"
               ) ? (
                 <img
-                  src={active.url}
+                  src={
+                    active.url
+                  }
                   alt={
                     active.file_name
                   }
@@ -211,15 +393,103 @@ export function AttachmentPreviewGallery({
                   "video/"
                 ) ? (
                 <video
-                  src={active.url}
+                  src={
+                    active.url
+                  }
                   controls
                   autoPlay
                 />
               ) : (
-                <p>
-                  Preview tidak
-                  tersedia.
-                </p>
+                <div
+                  style={{
+                    display:
+                      "flex",
+                    flexDirection:
+                      "column",
+                    alignItems:
+                      "center",
+                    justifyContent:
+                      "center",
+                    gap: 16,
+                    minHeight:
+                      300,
+                    padding: 24,
+                    textAlign:
+                      "center",
+                  }}
+                >
+                  <File
+                    size={52}
+                  />
+
+                  <div>
+                    <strong>
+                      {
+                        active.file_name
+                      }
+                    </strong>
+
+                    <div
+                      style={{
+                        marginTop:
+                          5,
+                        opacity:
+                          0.7,
+                      }}
+                    >
+                      Preview tidak
+                      tersedia untuk
+                      tipe file ini.
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleDownload(
+                        active
+                      )
+                    }
+                    disabled={
+                      downloading
+                    }
+                    style={{
+                      height: 42,
+                      padding:
+                        "0 18px",
+                      border: 0,
+                      borderRadius:
+                        10,
+                      background:
+                        "#173f72",
+                      color:
+                        "#ffffff",
+                      cursor:
+                        downloading
+                          ? "not-allowed"
+                          : "pointer",
+                      display:
+                        "inline-flex",
+                      alignItems:
+                        "center",
+                      gap: 8,
+                      fontWeight:
+                        700,
+                      opacity:
+                        downloading
+                          ? 0.6
+                          : 1,
+                    }}
+                  >
+                    <Download
+                      size={18}
+                    />
+
+                    {downloading
+                      ? "Downloading..."
+                      : "Download File"}
+                  </button>
+                </div>
               )}
             </div>
           </div>

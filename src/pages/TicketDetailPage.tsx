@@ -114,6 +114,7 @@ function commentUser(
   value: CommentRow["user"]
 ) {
   if (!value) return null;
+
   return Array.isArray(value)
     ? value[0] ?? null
     : value;
@@ -236,275 +237,299 @@ export function TicketDetailPage({
     profile.role === "IT";
 
   const [ticket, setTicket] =
-    useState<Ticket | null>(
-      null
-    );
+    useState<Ticket | null>(null);
+
   const [comments, setComments] =
     useState<CommentRow[]>([]);
+
   const [history, setHistory] =
     useState<HistoryRow[]>([]);
+
   const [
     attachments,
     setAttachments,
-  ] =
-    useState<
-      PreviewAttachment[]
-    >([]);
+  ] = useState<
+    PreviewAttachment[]
+  >([]);
+
   const [itUsers, setItUsers] =
     useState<AdminUser[]>([]);
+
   const [
     commentAttachments,
     setCommentAttachments,
-  ] = useState<Record<string, PreviewAttachment[]>>({});
+  ] = useState<
+    Record<
+      string,
+      PreviewAttachment[]
+    >
+  >({});
+
   const [loading, setLoading] =
     useState(true);
+
   const [error, setError] =
     useState<string | null>(null);
 
-  const load =
-    useCallback(
-      async () => {
-        setLoading(true);
-        setError(null);
+  const load = useCallback(
+    async () => {
+      setLoading(true);
+      setError(null);
 
-        const {
-          data:
-            ticketData,
-          error:
-            ticketError,
-        } =
-          await supabase
-            .from("tickets")
-            .select(`
-              *,
-              category:ticket_categories(name),
-              department:departments(name),
-              property:hotel_properties(name),
-              area:hotel_areas(name),
-              reporter:profiles!tickets_created_by_fkey(name,email),
-              assignee:profiles!tickets_assigned_to_fkey(name,email)
-            `)
-            .eq(
-              "id",
-              ticketId
-            )
-            .single();
+      const {
+        data: ticketData,
+        error: ticketError,
+      } = await supabase
+        .from("tickets")
+        .select(`
+          *,
+          category:ticket_categories(name),
+          department:departments(name),
+          property:hotel_properties(name),
+          area:hotel_areas(name),
+          reporter:profiles!tickets_created_by_fkey(name,email),
+          assignee:profiles!tickets_assigned_to_fkey(name,email)
+        `)
+        .eq("id", ticketId)
+        .single();
 
-        if (
-          ticketError ||
-          !ticketData
-        ) {
-          setTicket(null);
-          setError(
-            ticketError?.message ??
-              "Ticket tidak ditemukan."
-          );
-          setLoading(false);
-          return;
-        }
+      if (
+        ticketError ||
+        !ticketData
+      ) {
+        setTicket(null);
 
-        const [
-          commentsResult,
-          historyResult,
-          attachmentsResult,
-          adminResult,
-        ] =
-          await Promise.all([
-            supabase
+        setError(
+          ticketError?.message ??
+            "Ticket tidak ditemukan."
+        );
+
+        setLoading(false);
+        return;
+      }
+
+      const [
+        commentsResult,
+        historyResult,
+        attachmentsResult,
+        adminResult,
+      ] = await Promise.all([
+        supabase
+          .from("ticket_comments")
+          .select(`
+            id,
+            comment,
+            is_internal,
+            created_at,
+            user:profiles(name,role)
+          `)
+          .eq(
+            "ticket_id",
+            ticketId
+          )
+          .order(
+            "created_at"
+          ),
+
+        supabase
+          .from("ticket_history")
+          .select(`
+            id,
+            action,
+            old_value,
+            new_value,
+            description,
+            created_at,
+            user:profiles(name)
+          `)
+          .eq(
+            "ticket_id",
+            ticketId
+          )
+          .order(
+            "created_at",
+            {
+              ascending: false,
+            }
+          ),
+
+        supabase
+          .from(
+            "ticket_attachments"
+          )
+          .select(`
+            id,
+            comment_id,
+            file_name,
+            storage_path,
+            file_type,
+            file_size,
+            created_at
+          `)
+          .eq(
+            "ticket_id",
+            ticketId
+          )
+          .order(
+            "created_at"
+          ),
+
+        isIT
+          ? supabase
               .from(
-                "ticket_comments"
+                "profiles"
               )
-              .select(`
-                id,
-                comment,
-                is_internal,
-                created_at,
-                user:profiles(name,role)
-              `)
+              .select(
+                "id,name,role"
+              )
+              .in(
+                "role",
+                ["IT", "ADMIN"]
+              )
               .eq(
-                "ticket_id",
-                ticketId
+                "is_active",
+                true
               )
               .order(
-                "created_at"
-              ),
+                "name"
+              )
+          : Promise.resolve({
+              data: [],
+              error: null,
+            }),
+      ]);
 
-            supabase
-              .from(
-                "ticket_history"
-              )
-              .select(`
-                id,
-                action,
-                old_value,
-                new_value,
-                description,
-                created_at,
-                user:profiles(name)
-              `)
-              .eq(
-                "ticket_id",
-                ticketId
-              )
-              .order(
-                "created_at",
-                {
-                  ascending:
-                    false,
-                }
-              ),
+      const rawAttachments =
+        (attachmentsResult.data ??
+          []) as AttachmentRow[];
 
-            supabase
-              .from(
-                "ticket_attachments"
-              )
-              .select(`
-                id,
-                comment_id,
-                file_name,
-                storage_path,
-                file_type,
-                file_size,
-                created_at
-              `)
-              .eq(
-                "ticket_id",
-                ticketId
-              )
-              .order(
-                "created_at"
-              ),
-
-            isIT
-              ? supabase
+      const links =
+        await Promise.all(
+          rawAttachments.map(
+            async (
+              attachment
+            ) => {
+              const {
+                data,
+              } =
+                await supabase.storage
                   .from(
-                    "profiles"
+                    "ticket-attachments"
                   )
-                  .select(
-                    "id,name,role"
-                  )
-                  .in(
-                    "role",
-                    ["IT", "ADMIN"]
-                  )
-                  .eq(
-                    "is_active",
-                    true
-                  )
-                  .order(
-                    "name"
-                  )
-              : Promise.resolve({
-                  data: [],
-                  error: null,
-                }),
-          ]);
+                  .createSignedUrl(
+                    attachment.storage_path,
+                    60 * 60
+                  );
 
-        const rawAttachments =
-          (attachmentsResult.data ??
-            []) as AttachmentRow[];
-
-        const links =
-          await Promise.all(
-            rawAttachments.map(
-              async (
-                attachment
-              ) => {
-                const {
-                  data,
-                } =
-                  await supabase.storage
-                    .from(
-                      "ticket-attachments"
-                    )
-                    .createSignedUrl(
-                      attachment.storage_path,
-                      60 * 60
-                    );
-
-                return {
-                  id: attachment.id,
-                  comment_id: attachment.comment_id,
-                  file_name:
-                    attachment.file_name,
-                  file_type:
-                    attachment.file_type,
-                  file_size:
-                    attachment.file_size,
-                  url:
-                    data?.signedUrl ??
-                    "",
-                };
-              }
-            )
-          );
-
-        setTicket(
-          ticketData as unknown as Ticket
-        );
-        setComments(
-          (commentsResult.data ??
-            []) as unknown as CommentRow[]
-        );
-        setHistory(
-          (historyResult.data ??
-            []) as unknown as HistoryRow[]
-        );
-        const validLinks = links.filter((item) => Boolean(item.url));
-        setAttachments(
-          validLinks.filter((item) => !item.comment_id)
-        );
-
-        const groupedConversationAttachments: Record<
-          string,
-          PreviewAttachment[]
-        > = {};
-        for (const item of validLinks) {
-          if (!item.comment_id) continue;
-          groupedConversationAttachments[item.comment_id] ??= [];
-          groupedConversationAttachments[item.comment_id].push(item);
-        }
-        setCommentAttachments(groupedConversationAttachments);
-        setItUsers(
-          (
-            adminResult.data ??
-            []
-          ).map(
-            (user) => ({
-              id: String(
-                user.id
-              ),
-              name: String(
-                user.name ??
-                  "Admin"
-              ),
-              role: String(
-                user.role ??
-                  "ADMIN"
-              ),
-            })
+              return {
+                id:
+                  attachment.id,
+                comment_id:
+                  attachment.comment_id,
+                file_name:
+                  attachment.file_name,
+                file_type:
+                  attachment.file_type,
+                file_size:
+                  attachment.file_size,
+                url:
+                  data?.signedUrl ??
+                  "",
+              };
+            }
           )
         );
 
-        if (
-          commentsResult.error ||
-          historyResult.error ||
-          attachmentsResult.error ||
-          adminResult.error
-        ) {
-          console.error(
-            "Some ticket detail data failed:",
-            commentsResult.error,
-            historyResult.error,
-            attachmentsResult.error,
-            adminResult.error
-          );
+      setTicket(
+        ticketData as unknown as Ticket
+      );
+
+      setComments(
+        (commentsResult.data ??
+          []) as unknown as CommentRow[]
+      );
+
+      setHistory(
+        (historyResult.data ??
+          []) as unknown as HistoryRow[]
+      );
+
+      const validLinks =
+        links.filter(
+          (item) =>
+            Boolean(item.url)
+        );
+
+      setAttachments(
+        validLinks.filter(
+          (item) =>
+            !item.comment_id
+        )
+      );
+
+      const groupedConversationAttachments: Record<
+        string,
+        PreviewAttachment[]
+      > = {};
+
+      for (const item of validLinks) {
+        if (!item.comment_id) {
+          continue;
         }
 
-        setLoading(false);
-      },
-      [isIT, ticketId]
-    );
+        groupedConversationAttachments[
+          item.comment_id
+        ] ??= [];
+
+        groupedConversationAttachments[
+          item.comment_id
+        ].push(item);
+      }
+
+      setCommentAttachments(
+        groupedConversationAttachments
+      );
+
+      setItUsers(
+        (
+          adminResult.data ??
+          []
+        ).map(
+          (user) => ({
+            id: String(
+              user.id
+            ),
+            name: String(
+              user.name ??
+                "Admin"
+            ),
+            role: String(
+              user.role ??
+                "ADMIN"
+            ),
+          })
+        )
+      );
+
+      if (
+        commentsResult.error ||
+        historyResult.error ||
+        attachmentsResult.error ||
+        adminResult.error
+      ) {
+        console.error(
+          "Some ticket detail data failed:",
+          commentsResult.error,
+          historyResult.error,
+          attachmentsResult.error,
+          adminResult.error
+        );
+      }
+
+      setLoading(false);
+    },
+    [isIT, ticketId]
+  );
 
   useEffect(() => {
     void load();
@@ -516,8 +541,7 @@ export function TicketDetailPage({
         <div className="card muted">
           Memuat detail ticket...
         </div>
-      ) : error &&
-        !ticket ? (
+      ) : error && !ticket ? (
         <div className="alert alert-error">
           {error}
         </div>
@@ -532,9 +556,7 @@ export function TicketDetailPage({
                   fontSize: 13,
                 }}
               >
-                {
-                  ticket.ticket_number
-                }
+                {ticket.ticket_number}
               </div>
 
               <h1
@@ -551,8 +573,7 @@ export function TicketDetailPage({
               style={{
                 display: "flex",
                 gap: 8,
-                flexWrap:
-                  "wrap",
+                flexWrap: "wrap",
               }}
             >
               <PriorityBadge
@@ -560,13 +581,17 @@ export function TicketDetailPage({
                   ticket.priority
                 }
               />
+
               <StatusBadge
                 value={
                   ticket.status
                 }
               />
+
               <SlaBadge
-                value={getSlaState(ticket)}
+                value={getSlaState(
+                  ticket
+                )}
               />
             </div>
           </div>
@@ -582,12 +607,12 @@ export function TicketDetailPage({
                 <h2 className="section-title">
                   Problem Description
                 </h2>
+
                 <p
                   style={{
                     whiteSpace:
                       "pre-wrap",
-                    lineHeight:
-                      1.65,
+                    lineHeight: 1.65,
                     margin: 0,
                   }}
                 >
@@ -602,8 +627,11 @@ export function TicketDetailPage({
                   <h2 className="section-title">
                     Resolution Note
                   </h2>
+
                   <p className="resolution-note-text">
-                    {ticket.resolution_note}
+                    {
+                      ticket.resolution_note
+                    }
                   </p>
                 </section>
               )}
@@ -627,11 +655,9 @@ export function TicketDetailPage({
 
                 <div
                   style={{
-                    display:
-                      "grid",
+                    display: "grid",
                     gap: 10,
-                    marginBottom:
-                      16,
+                    marginBottom: 16,
                   }}
                 >
                   {comments.length ===
@@ -661,20 +687,35 @@ export function TicketDetailPage({
                               <span className="comment-author-line">
                                 <span>
                                   <strong>
-                                    {user?.name ?? "User"}
+                                    {user?.name ??
+                                      "User"}
                                   </strong>
+
                                   {" · "}
-                                  {user?.role === "ADMIN" || user?.role === "IT"
+
+                                  {user?.role ===
+                                    "ADMIN" ||
+                                  user?.role ===
+                                    "IT"
                                     ? "IT"
-                                    : relationName(ticket.department, "Staff")}
+                                    : relationName(
+                                        ticket.department,
+                                        "Staff"
+                                      )}
                                 </span>
+
                                 {comment.is_internal && (
-                                  <span className="internal-note-badge">Internal Note</span>
+                                  <span className="internal-note-badge">
+                                    Internal
+                                    Note
+                                  </span>
                                 )}
                               </span>
 
                               <span>
-                                {localDate(comment.created_at)}
+                                {localDate(
+                                  comment.created_at
+                                )}
                               </span>
                             </div>
 
@@ -684,13 +725,23 @@ export function TicketDetailPage({
                                   "pre-wrap",
                               }}
                             >
-                              {comment.comment}
+                              {
+                                comment.comment
+                              }
                             </div>
 
-                            {(commentAttachments[comment.id]?.length ?? 0) > 0 && (
+                            {(commentAttachments[
+                              comment.id
+                            ]?.length ??
+                              0) >
+                              0 && (
                               <div className="conversation-attachment-gallery">
                                 <AttachmentPreviewGallery
-                                  attachments={commentAttachments[comment.id]}
+                                  attachments={
+                                    commentAttachments[
+                                      comment.id
+                                    ]
+                                  }
                                 />
                               </div>
                             )}
@@ -718,7 +769,8 @@ export function TicketDetailPage({
                   isIT={isIT}
                   canReopen={
                     isIT ||
-                    ticket.created_by === profile.id
+                    ticket.created_by ===
+                      profile.id
                   }
                   itUsers={
                     itUsers
@@ -769,27 +821,43 @@ export function TicketDetailPage({
                     Property
                   </dt>
                   <dd>
-                    {ticket.property_id ? relationName(ticket.property) : "Tidak diperlukan"}
+                    {ticket.property_id
+                      ? relationName(
+                          ticket.property
+                        )
+                      : "Tidak ditentukan"}
                   </dd>
 
                   <dt>
                     Area
                   </dt>
                   <dd>
-                    {relationName(ticket.area)}
+                    {ticket.area_id
+                      ? relationName(
+                          ticket.area
+                        )
+                      : "Tidak ditentukan"}
                   </dd>
 
                   <dt>
                     Location Detail
                   </dt>
                   <dd>
-                    {ticket.location || "-"}
+                    {ticket.location ||
+                      "-"}
                   </dd>
 
                   {ticket.device_name && (
                     <>
-                      <dt>Legacy Device</dt>
-                      <dd>{ticket.device_name}</dd>
+                      <dt>
+                        Legacy Device
+                      </dt>
+
+                      <dd>
+                        {
+                          ticket.device_name
+                        }
+                      </dd>
                     </>
                   )}
 
@@ -812,14 +880,18 @@ export function TicketDetailPage({
                     )}
                   </dd>
 
-                  <dt>Created</dt>
+                  <dt>
+                    Created
+                  </dt>
                   <dd>
                     {localDate(
                       ticket.created_at
                     )}
                   </dd>
 
-                  <dt>Updated</dt>
+                  <dt>
+                    Updated
+                  </dt>
                   <dd>
                     {localDate(
                       ticket.updated_at
@@ -868,9 +940,13 @@ export function TicketDetailPage({
                   </dt>
                   <dd>
                     {ticket.first_response_at
-                      ? `Met · ${localDate(ticket.first_response_at)}`
+                      ? `Met · ${localDate(
+                          ticket.first_response_at
+                        )}`
                       : ticket.sla_response_due_at
-                        ? `${localDate(ticket.sla_response_due_at)} · ${formatDueDistance(
+                        ? `${localDate(
+                            ticket.sla_response_due_at
+                          )} · ${formatDueDistance(
                             ticket.sla_response_due_at
                           )}`
                         : "-"}
@@ -881,9 +957,13 @@ export function TicketDetailPage({
                   </dt>
                   <dd>
                     {ticket.finished_at
-                      ? `Complete · ${localDate(ticket.finished_at)}`
+                      ? `Complete · ${localDate(
+                          ticket.finished_at
+                        )}`
                       : ticket.sla_resolution_due_at
-                        ? `${localDate(ticket.sla_resolution_due_at)} · ${formatDueDistance(
+                        ? `${localDate(
+                            ticket.sla_resolution_due_at
+                          )} · ${formatDueDistance(
                             ticket.sla_resolution_due_at
                           )}`
                         : "-"}
@@ -893,9 +973,13 @@ export function TicketDetailPage({
                     Reopen Count
                   </dt>
                   <dd>
-                    {ticket.reopen_count || 0}
+                    {ticket.reopen_count ||
+                      0}
+
                     {ticket.reopened_at
-                      ? ` · terakhir ${localDate(ticket.reopened_at)}`
+                      ? ` · terakhir ${localDate(
+                          ticket.reopened_at
+                        )}`
                       : ""}
                   </dd>
                 </dl>
@@ -929,7 +1013,9 @@ export function TicketDetailPage({
                                 "System"
                               )}
                             </strong>
+
                             {" "}
+
                             {historyText(
                               item
                             )}

@@ -36,3 +36,6 @@ Panel Quick Actions pada dashboard admin diubah menjadi Recent Updates. Data dia
 ## Status UI
 - Database status tetap kompatibel dengan nilai lama.
 - Label UI: OPEN/ASSIGNED → WAITING (biru), IN_PROGRESS/WAITING_USER → IN PROGRESS (oranye), RESOLVED/CLOSED → DONE (hijau).
+
+## V5.2 — Flexible Property & Area
+Run `supabase/upgrade_helpdesk_v5_2.sql` after V5.1. Property remains optional and Area becomes a global master independent from Property.

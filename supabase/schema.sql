@@ -1309,23 +1309,22 @@ create table if not exists public.hotel_areas (
   updated_at timestamptz not null default now()
 );
 
--- Also normalize installations that already ran the first V5 location schema.
+-- V5.2: Area is a global master. property_id remains only for backward
+-- compatibility with older installations and is normalized to NULL.
 alter table public.hotel_areas
   alter column property_id drop not null;
 
 alter table public.hotel_areas
   drop constraint if exists hotel_areas_property_id_name_key;
 
-create index if not exists hotel_areas_property_idx
-  on public.hotel_areas(property_id, is_active, name);
+drop index if exists public.hotel_areas_property_name_unique;
+drop index if exists public.hotel_areas_common_name_unique;
 
-create unique index if not exists hotel_areas_property_name_unique
-  on public.hotel_areas(property_id, name)
-  where property_id is not null;
+create unique index if not exists hotel_areas_name_unique_ci
+  on public.hotel_areas(lower(btrim(name)));
 
-create unique index if not exists hotel_areas_common_name_unique
-  on public.hotel_areas(name)
-  where property_id is null;
+create index if not exists hotel_areas_active_name_idx
+  on public.hotel_areas(is_active, name);
 
 alter table public.tickets
   add column if not exists property_id uuid null references public.hotel_properties(id) on delete set null;
@@ -1356,40 +1355,24 @@ create trigger hotel_areas_updated_at
 before update on public.hotel_areas
 for each row execute function public.set_updated_at();
 
--- ---------- Validate property / area consistency ----------
+-- ---------- Validate location ----------
+-- Property and Area are intentionally independent. Property is optional
+-- context, while Area is selected from one global master list.
 create or replace function public.validate_ticket_location()
 returns trigger
 language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
-declare
-  v_area_property uuid;
 begin
   if new.area_id is null then
     return new;
   end if;
 
-  select property_id into v_area_property
-  from public.hotel_areas
-  where id = new.area_id;
-
-  if not found then
+  if not exists (
+    select 1 from public.hotel_areas where id = new.area_id
+  ) then
     raise exception 'Area tidak ditemukan.';
-  end if;
-
-  -- property_id NULL pada master area berarti area umum/lintas property.
-  -- Untuk area umum, ticket boleh tanpa Property atau tetap menyebut Property jika diperlukan.
-  if v_area_property is null then
-    return new;
-  end if;
-
-  if new.property_id is null then
-    raise exception 'Property wajib dipilih untuk area khusus ini.';
-  end if;
-
-  if v_area_property <> new.property_id then
-    raise exception 'Area tidak sesuai dengan Property yang dipilih.';
   end if;
 
   return new;
@@ -1861,66 +1844,31 @@ exception when insufficient_privilege then
   raise notice 'Could not add notifications to supabase_realtime publication; polling will still work.';
 end $$;
 
--- ---------- Seed properties and common hotel areas ----------
+-- ---------- Seed properties and global hotel areas ----------
 insert into public.hotel_properties(name, description)
 values
   ('Four Points by Sheraton Bekasi', 'Four Points by Sheraton Bekasi'),
   ('Fairfield by Marriott Bekasi', 'Fairfield by Marriott Bekasi')
 on conflict (name) do nothing;
 
--- Area yang memang berbeda per hotel tetap terikat ke property.
+-- Area is intentionally independent from Property.
 insert into public.hotel_areas(property_id, name)
-select p.id, a.name
-from public.hotel_properties p
-cross join (
+select null, v.name
+from (
   values
-    ('Front Office'),
-    ('Front Desk'),
-    ('Lobby / Public Area'),
-    ('Guest Room'),
-    ('Restaurant'),
-    ('Kitchen'),
     ('Back Office'),
+    ('Ballroom / Meeting Room'),
     ('Engineering / Utility'),
+    ('Front Desk'),
+    ('Front Office'),
+    ('Guest Room'),
     ('IT / Server Room'),
-    ('Other')
-) as a(name)
-where p.name in ('Four Points by Sheraton Bekasi','Fairfield by Marriott Bekasi')
-on conflict do nothing;
-
--- Ballroom / Meeting Room dipakai bersama. Property tidak wajib untuk area ini.
-insert into public.hotel_areas(property_id, name, description)
-select null, 'Ballroom / Meeting Room', 'Area umum untuk Four Points dan Fairfield'
+    ('Kitchen'),
+    ('Lobby / Public Area'),
+    ('Other'),
+    ('Restaurant')
+) as v(name)
 where not exists (
-  select 1 from public.hotel_areas
-  where property_id is null and name = 'Ballroom / Meeting Room'
+  select 1 from public.hotel_areas a
+  where lower(btrim(a.name)) = lower(btrim(v.name))
 );
-
--- If an earlier V5 created one Ballroom / Meeting Room row per property,
--- consolidate them into the common row and preserve ticket references.
-do $$
-declare
-  v_common_id uuid;
-  v_duplicate record;
-begin
-  select id into v_common_id
-  from public.hotel_areas
-  where name = 'Ballroom / Meeting Room'
-  order by (property_id is null) desc, created_at, id
-  limit 1;
-
-  if v_common_id is not null then
-    update public.hotel_areas
-    set property_id = null,
-        description = coalesce(description, 'Area umum untuk Four Points dan Fairfield')
-    where id = v_common_id;
-
-    for v_duplicate in
-      select id from public.hotel_areas
-      where name = 'Ballroom / Meeting Room' and id <> v_common_id
-    loop
-      update public.tickets set area_id = v_common_id where area_id = v_duplicate.id;
-      delete from public.hotel_areas where id = v_duplicate.id;
-    end loop;
-  end if;
-end $$;

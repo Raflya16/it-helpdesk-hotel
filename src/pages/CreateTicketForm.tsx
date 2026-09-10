@@ -70,12 +70,9 @@ export function CreateTicketForm({
   const [selectedArea, setSelectedArea] =
     useState("");
 
-  const filteredAreas = areas.filter((area) => {
-    // Area tanpa property adalah area umum (mis. Ballroom / Meeting Room).
-    // Saat property belum dipilih, hanya area umum yang ditampilkan.
-    if (!selectedProperty) return area.property_id === null;
-    return area.property_id === null || area.property_id === selectedProperty;
-  });
+  // Property dan Area sengaja dibuat independen. Property hanya memberi
+  // konteks hotel, sedangkan Area selalu menampilkan seluruh master area aktif.
+  const availableAreas = areas;
 
   useEffect(() => {
     const newPreviews =
@@ -604,17 +601,9 @@ export function CreateTicketForm({
             className="select"
             name="property_id"
             value={selectedProperty}
-            onChange={(event) => {
-              const nextProperty = event.target.value;
-              setSelectedProperty(nextProperty);
-
-              const currentArea = areas.find((item) => item.id === selectedArea);
-              if (currentArea && currentArea.property_id !== null && currentArea.property_id !== nextProperty) {
-                setSelectedArea("");
-              }
-            }}
+            onChange={(event) => setSelectedProperty(event.target.value)}
           >
-            <option value="">Tidak perlu / area umum</option>
+            <option value="">Tidak ditentukan / area umum</option>
             {properties.map((property) => (
               <option key={property.id} value={property.id}>
                 {property.name}
@@ -622,7 +611,7 @@ export function CreateTicketForm({
             ))}
           </select>
           <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>
-            Kosongkan untuk area umum seperti Ballroom / Meeting Room.
+            Opsional. Pilih hotel hanya jika lokasi perlu dibedakan antara Four Points dan Fairfield.
           </div>
         </div>
 
@@ -639,16 +628,16 @@ export function CreateTicketForm({
             onChange={(event) => setSelectedArea(event.target.value)}
           >
             <option value="" disabled>
-              {selectedProperty ? "Pilih area" : "Pilih area umum"}
+              Pilih area
             </option>
-            {filteredAreas.map((area) => (
+            {availableAreas.map((area) => (
               <option key={area.id} value={area.id}>
                 {area.name}
               </option>
             ))}
           </select>
           <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>
-            Pilih property terlebih dahulu untuk area khusus seperti Front Office / Front Desk.
+            Semua area tetap tersedia meskipun Property tidak dipilih.
           </div>
         </div>
 

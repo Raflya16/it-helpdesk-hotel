@@ -28,17 +28,11 @@ type MasterRow = {
 
 type AreaRow = MasterRow & {
   property_id: string | null;
-  property: { name?: string } | { name?: string }[] | null;
 };
 
 type MasterTable = "departments" | "ticket_categories" | "hotel_properties";
 
 const PAGE_SIZE = 7;
-
-function relationLabel(value: AreaRow["property"]) {
-  if (!value) return "Area umum";
-  return Array.isArray(value) ? value[0]?.name ?? "-" : value.name ?? "-";
-}
 
 function EditorModal({
   itemLabel,
@@ -158,31 +152,27 @@ function EditorModal({
 
 function AreaEditorModal({
   row,
-  properties,
   open,
   saving,
   onClose,
   onSave,
 }: {
   row: AreaRow | null;
-  properties: MasterRow[];
   open: boolean;
   saving: boolean;
   onClose: () => void;
-  onSave: (values: { propertyId: string | null; name: string; description: string; isActive: boolean }) => Promise<void>;
+  onSave: (values: { name: string; description: string; isActive: boolean }) => Promise<void>;
 }) {
-  const [propertyId, setPropertyId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
     if (!open) return;
-    setPropertyId(row?.property_id ?? "");
     setName(row?.name ?? "");
     setDescription(row?.description ?? "");
     setIsActive(row?.is_active ?? true);
-  }, [open, row, properties]);
+  }, [open, row]);
 
   if (!open) return null;
 
@@ -190,7 +180,6 @@ function AreaEditorModal({
     event.preventDefault();
     if (!name.trim()) return;
     await onSave({
-      propertyId: propertyId || null,
       name: name.trim(),
       description: description.trim(),
       isActive,
@@ -211,16 +200,6 @@ function AreaEditorModal({
         </div>
 
         <form className="settings-modal-form" onSubmit={(event) => void submit(event)}>
-          <label className="settings-field">
-            <span>Property</span>
-            <select className="select" value={propertyId} onChange={(event) => setPropertyId(event.target.value)}>
-              <option value="">Tanpa property (area umum)</option>
-              {properties.map((property) => (
-                <option key={property.id} value={property.id}>{property.name}</option>
-              ))}
-            </select>
-          </label>
-
           <label className="settings-field">
             <span>Nama Area</span>
             <input className="input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Contoh: Ballroom / Meeting Room" required />
@@ -503,7 +482,6 @@ function MasterSection({
 
 function AreaSection() {
   const [rows, setRows] = useState<AreaRow[]>([]);
-  const [properties, setProperties] = useState<MasterRow[]>([]);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -519,16 +497,16 @@ function AreaSection() {
 
   async function load() {
     setLoading(true);
-    const [areaResult, propertyResult] = await Promise.all([
-      supabase.from("hotel_areas").select("id,name,description,is_active,property_id,property:hotel_properties(name)").order("is_active", { ascending: false }).order("name"),
-      supabase.from("hotel_properties").select("id,name,description,is_active").order("name"),
-    ]);
-    if (areaResult.error || propertyResult.error) {
-      setError(areaResult.error?.message ?? propertyResult.error?.message ?? "Gagal memuat area.");
+    const areaResult = await supabase
+      .from("hotel_areas")
+      .select("id,name,description,is_active,property_id")
+      .order("is_active", { ascending: false })
+      .order("name");
+    if (areaResult.error) {
+      setError(areaResult.error.message);
       setRows([]);
     } else {
       setRows((areaResult.data ?? []) as unknown as AreaRow[]);
-      setProperties((propertyResult.data ?? []) as MasterRow[]);
     }
     setLoading(false);
   }
@@ -537,7 +515,7 @@ function AreaSection() {
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-    return keyword ? rows.filter((row) => `${row.name} ${row.description ?? ""} ${relationLabel(row.property)}`.toLowerCase().includes(keyword)) : rows;
+    return keyword ? rows.filter((row) => `${row.name} ${row.description ?? ""}`.toLowerCase().includes(keyword)) : rows;
   }, [rows, search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
@@ -547,11 +525,11 @@ function AreaSection() {
   const rangeStart = filteredRows.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(safePage * PAGE_SIZE, filteredRows.length);
 
-  async function saveArea(values: { propertyId: string | null; name: string; description: string; isActive: boolean }) {
+  async function saveArea(values: { name: string; description: string; isActive: boolean }) {
     setSaving(true);
     setError(null);
     try {
-      const payload = { property_id: values.propertyId, name: values.name, description: values.description || null, is_active: values.isActive };
+      const payload = { property_id: null, name: values.name, description: values.description || null, is_active: values.isActive };
       const result = editingRow
         ? await supabase.from("hotel_areas").update(payload).eq("id", editingRow.id)
         : await supabase.from("hotel_areas").insert(payload);
@@ -604,7 +582,7 @@ function AreaSection() {
       <div className="settings-section-heading">
         <div>
           <div className="settings-section-title-line"><h2 className="section-title">Areas</h2><span className="settings-count-badge">{rows.length}</span></div>
-          <p className="muted">Area umum dapat digunakan tanpa property; area khusus tetap dapat dihubungkan ke Four Points atau Fairfield.</p>
+          <p className="muted">Area berlaku fleksibel untuk semua Property. Property pada ticket tetap opsional dan tidak membatasi pilihan Area.</p>
         </div>
         <button type="button" className="btn btn-primary settings-add-button" onClick={() => { setEditingRow(null); setEditorOpen(true); }}>
           <Plus size={16} /> Tambah
@@ -612,15 +590,15 @@ function AreaSection() {
       </div>
 
       <div className="settings-section-meta"><span><strong>{activeCount}</strong> aktif</span><span>{rows.length - activeCount} nonaktif</span></div>
-      <div className="settings-search-box"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari area atau property..." />{search && <button type="button" onClick={() => setSearch("")}><X size={15} /></button>}</div>
+      <div className="settings-search-box"><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Cari area..." />{search && <button type="button" onClick={() => setSearch("")}><X size={15} /></button>}</div>
       {error && <div className="alert alert-error settings-inline-alert">{error}</div>}
       {success && <div className="alert alert-success settings-inline-alert">{success}</div>}
 
       <div className="settings-compact-list">
-        <div className="settings-list-header" aria-hidden="true"><span>Area / Property</span><span>Status</span><span>Aksi</span></div>
+        <div className="settings-list-header" aria-hidden="true"><span>Area</span><span>Status</span><span>Aksi</span></div>
         {loading ? <div className="settings-empty-state">Memuat data...</div> : pageRows.length === 0 ? <div className="settings-empty-state">Belum ada area.</div> : pageRows.map((row) => (
           <div className="settings-compact-row" key={row.id}>
-            <div className="settings-row-copy"><strong>{row.name}</strong><span>{relationLabel(row.property)}</span></div>
+            <div className="settings-row-copy"><strong>{row.name}</strong><span>{row.description || "Berlaku untuk semua property"}</span></div>
             <button type="button" className={`settings-status-pill ${row.is_active ? "is-active" : "is-inactive"}`} onClick={() => void toggleActive(row)} disabled={togglingId === row.id}><span className="settings-status-dot" />{togglingId === row.id ? "..." : row.is_active ? "Active" : "Inactive"}</button>
             <div className="settings-compact-actions">
               <button type="button" className="settings-action-button" onClick={() => { setEditingRow(row); setEditorOpen(true); }}><Pencil size={15} /></button>
@@ -632,7 +610,7 @@ function AreaSection() {
 
       <div className="settings-pagination"><span>{rangeStart}-{rangeEnd} dari {filteredRows.length}</span><div className="settings-pagination-actions"><button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage <= 1}><ChevronLeft size={16} /></button><span>{safePage} / {totalPages}</span><button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={safePage >= totalPages}><ChevronRight size={16} /></button></div></div>
 
-      <AreaEditorModal row={editingRow} properties={properties} open={editorOpen} saving={saving} onClose={() => !saving && setEditorOpen(false)} onSave={saveArea} />
+      <AreaEditorModal row={editingRow} open={editorOpen} saving={saving} onClose={() => !saving && setEditorOpen(false)} onSave={saveArea} />
       <DeleteModal itemLabel="Area" row={deleteTarget} deleting={deleting} blockingMessage={deleteBlockingMessage} onClose={() => { if (!deleting) { setDeleteTarget(null); setDeleteBlockingMessage(null); } }} onConfirm={confirmDelete} />
     </section>
   );
@@ -646,7 +624,7 @@ export function AdminSettingsPage({ profile }: { profile: Profile }) {
       <div className="topbar">
         <div>
           <h1 className="page-title">Settings</h1>
-          <p className="page-subtitle">Kelola Department, Category, Property, dan Area tanpa merusak histori ticket lama.</p>
+          <p className="page-subtitle">Kelola Department, Category, Property, dan Area tanpa merusak histori ticket lama. Property dan Area dikelola secara fleksibel.</p>
         </div>
       </div>
 

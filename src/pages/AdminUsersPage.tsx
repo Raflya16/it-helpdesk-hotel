@@ -482,7 +482,7 @@ export function AdminUsersPage({
         </div>
 
         <div className="table-wrap">
-          <table className="ticket-list-table user-table">
+          <table className="ticket-list-table user-table responsive-data-table">
             <thead>
               <tr>
                 <th>Nama</th>
@@ -511,7 +511,7 @@ export function AdminUsersPage({
               ) : (
                 filteredUsers.map((user) => (
                   <tr key={user.id}>
-                    <td>
+                    <td data-label="Nama">
                       <strong>{user.name}</strong>
                       {user.email && (
                         <small className="user-email">
@@ -519,16 +519,16 @@ export function AdminUsersPage({
                         </small>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Department">
                       {relationName(user.department)}
                     </td>
-                    <td>
+                    <td data-label="Position">
                       {user.position || "-"}
                     </td>
-                    <td>
+                    <td data-label="Employee ID">
                       {user.employee_id || "-"}
                     </td>
-                    <td>
+                    <td data-label="Role">
                       <span
                         className={`user-role-badge ${
                           user.role === "ADMIN" || user.role === "IT"
@@ -541,7 +541,7 @@ export function AdminUsersPage({
                           : user.role}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <span
                         className={
                           user.is_active
@@ -554,7 +554,7 @@ export function AdminUsersPage({
                           : "INACTIVE"}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Aksi">
                       <button
                         type="button"
                         className="user-edit-action"

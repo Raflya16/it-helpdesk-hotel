@@ -621,6 +621,8 @@ function MasterSection({
 }
 
 export function AdminSettingsPage({ profile }: { profile: Profile }) {
+  const [mobileSection, setMobileSection] = useState<"departments" | "categories">("departments");
+
   return (
     <AppShell profile={profile}>
       <div className="topbar">
@@ -632,19 +634,44 @@ export function AdminSettingsPage({ profile }: { profile: Profile }) {
         </div>
       </div>
 
+      <div className="settings-mobile-tabs" role="tablist" aria-label="Master data settings">
+        <button
+          type="button"
+          className={mobileSection === "departments" ? "is-active" : ""}
+          onClick={() => setMobileSection("departments")}
+          role="tab"
+          aria-selected={mobileSection === "departments"}
+        >
+          Departments
+        </button>
+        <button
+          type="button"
+          className={mobileSection === "categories" ? "is-active" : ""}
+          onClick={() => setMobileSection("categories")}
+          role="tab"
+          aria-selected={mobileSection === "categories"}
+        >
+          Categories
+        </button>
+      </div>
+
       <div className="settings-grid">
-        <MasterSection
-          title="Departments"
-          singular="Department"
-          description="Department untuk profile user dan ticket."
-          table="departments"
-        />
-        <MasterSection
-          title="Categories"
-          singular="Category"
-          description="Category untuk klasifikasi ticket baru."
-          table="ticket_categories"
-        />
+        <div className={`settings-mobile-panel ${mobileSection === "departments" ? "is-active" : ""}`}>
+          <MasterSection
+            title="Departments"
+            singular="Department"
+            description="Department untuk profile user dan ticket."
+            table="departments"
+          />
+        </div>
+        <div className={`settings-mobile-panel ${mobileSection === "categories" ? "is-active" : ""}`}>
+          <MasterSection
+            title="Categories"
+            singular="Category"
+            description="Category untuk klasifikasi ticket baru."
+            table="ticket_categories"
+          />
+        </div>
       </div>
     </AppShell>
   );

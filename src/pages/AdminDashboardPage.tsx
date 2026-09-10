@@ -536,7 +536,7 @@ export function AdminDashboardPage({
           </div>
 
           <div className="dashboard-table-wrapper">
-            <table className="dashboard-table">
+            <table className="dashboard-table responsive-data-table">
               <thead>
                 <tr>
                   <th>No</th>
@@ -575,7 +575,7 @@ export function AdminDashboardPage({
                   recentTickets.map(
                     (ticket) => (
                       <tr key={ticket.id}>
-                        <td>
+                        <td data-label="Ticket">
                           <Link
                             to={`/tickets/${ticket.id}`}
                             className="dashboard-ticket-number"
@@ -586,36 +586,36 @@ export function AdminDashboardPage({
                           </Link>
                         </td>
 
-                        <td>
+                        <td data-label="Issue">
                           <strong className="dashboard-ticket-title">
                             {ticket.title}
                           </strong>
                         </td>
 
-                        <td>
+                        <td data-label="Department">
                           {relationName(
                             ticket.department
                           )}
                         </td>
-                        <td>
+                        <td data-label="Reporter">
                           {relationName(
                             ticket.reporter
                           )}
                         </td>
-                        <td>
+                        <td data-label="Assigned To">
                           {relationName(
                             ticket.assignee,
                             "Unassigned"
                           )}
                         </td>
-                        <td>
+                        <td data-label="Priority">
                           <PriorityBadge
                             value={
                               ticket.priority
                             }
                           />
                         </td>
-                        <td>
+                        <td data-label="Status">
                           <StatusBadge
                             value={
                               ticket.status

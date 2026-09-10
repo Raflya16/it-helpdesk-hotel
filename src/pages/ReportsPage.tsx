@@ -1181,7 +1181,7 @@ export function ReportsPage({
             </div>
           ) : (
             <div className="table-wrap">
-              <table className="ticket-list-table">
+              <table className="ticket-list-table report-ticket-table responsive-data-table">
                 <thead>
                   <tr>
                     <th>No</th>
@@ -1223,12 +1223,12 @@ export function ReportsPage({
                           ticket.id
                         }
                       >
-                        <td className="ticket-row-number">
+                        <td className="ticket-row-number" data-label="No">
                           {index +
                             1}
                         </td>
 
-                        <td>
+                        <td data-label="Ticket">
                           <span className="ticket-code">
                             {
                               ticket.ticket_number
@@ -1236,13 +1236,13 @@ export function ReportsPage({
                           </span>
                         </td>
 
-                        <td>
+                        <td data-label="Category">
                           {relationName(
                             ticket.category
                           )}
                         </td>
 
-                        <td>
+                        <td data-label="Kendala">
                           <div
                             className="ticket-problem"
                             title={
@@ -1256,20 +1256,20 @@ export function ReportsPage({
                           </div>
                         </td>
 
-                        <td>
+                        <td data-label="Reporter">
                           {relationName(
                             ticket.reporter
                           )}
                         </td>
 
-                        <td>
+                        <td data-label="Assigned To">
                           {relationName(
                             ticket.assignee,
                             "Unassigned"
                           )}
                         </td>
 
-                        <td>
+                        <td data-label="Selesai">
                           <span className="ticket-date">
                             {formatDateTime(
                               ticket.finished_at
@@ -1277,13 +1277,13 @@ export function ReportsPage({
                           </span>
                         </td>
 
-                        <td>
+                        <td data-label="Status">
                           <StatusBadge
                             value="CLOSED"
                           />
                         </td>
 
-                        <td>
+                        <td data-label="Aksi">
                           <Link
                             to={`/tickets/${ticket.id}`}
                             className="ticket-view-button"

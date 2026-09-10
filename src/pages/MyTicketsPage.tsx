@@ -187,7 +187,7 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="card table-wrap">
-        <table>
+        <table className="responsive-data-table my-ticket-table">
           <thead>
             <tr>
               <th>Ticket</th>
@@ -208,18 +208,18 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
             ) : (
               tickets.map((ticket) => (
                 <tr key={ticket.id}>
-                  <td>
+                  <td data-label="Ticket">
                     <Link to={`/tickets/${ticket.id}`} style={{ fontWeight: 800 }}>
                       {ticket.ticket_number}
                     </Link>
                   </td>
-                  <td>{ticket.title}</td>
-                  <td>{relationName(ticket.department)}</td>
-                  <td>{relationName(ticket.category)}</td>
-                  <td><PriorityBadge value={ticket.priority} /></td>
-                  <td><StatusBadge value={ticket.status} /></td>
-                  <td><SlaBadge value={getSlaState(ticket)} /></td>
-                  <td>{new Date(ticket.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}</td>
+                  <td data-label="Title">{ticket.title}</td>
+                  <td data-label="Department">{relationName(ticket.department)}</td>
+                  <td data-label="Category">{relationName(ticket.category)}</td>
+                  <td data-label="Priority"><PriorityBadge value={ticket.priority} /></td>
+                  <td data-label="Status"><StatusBadge value={ticket.status} /></td>
+                  <td data-label="SLA"><SlaBadge value={getSlaState(ticket)} /></td>
+                  <td data-label="Created">{new Date(ticket.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}</td>
                 </tr>
               ))
             )}

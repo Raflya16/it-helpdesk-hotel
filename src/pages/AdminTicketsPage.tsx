@@ -1,4 +1,4 @@
-import { Eye } from "lucide-react";
+import { Eye, SlidersHorizontal } from "lucide-react";
 import {
   FormEvent,
   useEffect,
@@ -86,6 +86,7 @@ export function AdminTicketsPage({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   useEffect(() => {
     const current = new URLSearchParams(search);
@@ -290,6 +291,7 @@ export function AdminTicketsPage({
     }
 
     const query = next.toString();
+    setMobileFilterOpen(false);
     navigate(query ? `/admin/tickets?${query}` : "/admin/tickets");
   }
 
@@ -304,8 +306,23 @@ export function AdminTicketsPage({
         </div>
       </div>
 
-      <form className="card" onSubmit={applyFilter} style={{ marginBottom: 18 }}>
-        <div className="advanced-filter-grid">
+      <form
+        className={`card advanced-filter-card ${mobileFilterOpen ? "is-mobile-open" : ""}`}
+        onSubmit={applyFilter}
+        style={{ marginBottom: 18 }}
+      >
+        <button
+          type="button"
+          className="btn btn-secondary mobile-filter-toggle"
+          onClick={() => setMobileFilterOpen((current) => !current)}
+          aria-expanded={mobileFilterOpen}
+        >
+          <SlidersHorizontal size={17} />
+          {mobileFilterOpen ? "Tutup Filter" : "Filter Tickets"}
+        </button>
+
+        <div className="advanced-filter-body">
+          <div className="advanced-filter-grid">
           <div className="advanced-filter-search">
             <label className="label" htmlFor="ticket-search">Search</label>
             <input
@@ -382,16 +399,17 @@ export function AdminTicketsPage({
           </div>
         </div>
 
-        <div className="filter-action-row">
-          <button className="btn btn-primary" type="submit">Apply Filter</button>
-          <button className="btn btn-secondary" type="button" onClick={() => navigate("/admin/tickets")}>Reset</button>
+          <div className="filter-action-row">
+            <button className="btn btn-primary" type="submit">Apply Filter</button>
+            <button className="btn btn-secondary" type="button" onClick={() => navigate("/admin/tickets")}>Reset</button>
+          </div>
         </div>
       </form>
 
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="card table-wrap">
-        <table className="ticket-list-table">
+        <table className="ticket-list-table responsive-data-table admin-ticket-table">
           <thead>
             <tr>
               <th>No</th>
@@ -415,17 +433,17 @@ export function AdminTicketsPage({
             ) : (
               tickets.map((ticket, index) => (
                 <tr key={ticket.id}>
-                  <td className="ticket-row-number">{(page - 1) * pageSize + index + 1}</td>
-                  <td><span className="ticket-code">{ticket.ticket_number}</span></td>
-                  <td><span className="ticket-category">{relationName(ticket.category)}</span></td>
-                  <td><div className="ticket-problem" title={ticket.description}>{problemSummary(ticket.description)}</div></td>
-                  <td><PriorityBadge value={ticket.priority} /></td>
-                  <td><span className="ticket-date">{formatDateTime(ticket.created_at)}</span></td>
-                  <td>{relationName(ticket.reporter)}</td>
-                  <td>{ticket.assignee ? relationName(ticket.assignee) : <span className="ticket-unassigned">Unassigned</span>}</td>
-                  <td><StatusBadge value={ticket.status} /></td>
-                  <td><SlaBadge value={getSlaState(ticket)} /></td>
-                  <td>
+                  <td className="ticket-row-number" data-label="No">{(page - 1) * pageSize + index + 1}</td>
+                  <td data-label="Ticket"><span className="ticket-code">{ticket.ticket_number}</span></td>
+                  <td data-label="Category"><span className="ticket-category">{relationName(ticket.category)}</span></td>
+                  <td data-label="Kendala"><div className="ticket-problem" title={ticket.description}>{problemSummary(ticket.description)}</div></td>
+                  <td data-label="Priority"><PriorityBadge value={ticket.priority} /></td>
+                  <td data-label="Tanggal"><span className="ticket-date">{formatDateTime(ticket.created_at)}</span></td>
+                  <td data-label="Reporter">{relationName(ticket.reporter)}</td>
+                  <td data-label="Assigned To">{ticket.assignee ? relationName(ticket.assignee) : <span className="ticket-unassigned">Unassigned</span>}</td>
+                  <td data-label="Status"><StatusBadge value={ticket.status} /></td>
+                  <td data-label="SLA"><SlaBadge value={getSlaState(ticket)} /></td>
+                  <td data-label="Aksi">
                     <Link
                       to={`/tickets/${ticket.id}`}
                       className="ticket-view-button"

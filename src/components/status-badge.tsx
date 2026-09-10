@@ -141,16 +141,16 @@ export function SlaBadge({
   const state = String(value || "ON_TRACK").toUpperCase();
 
   if (state === "OVERDUE_RESPONSE") {
-    return <span className="badge sla-overdue">RESPONSE OVERDUE</span>;
+    return <span className="badge sla-overdue">RESPONS TERLAMBAT</span>;
   }
 
   if (state === "OVERDUE_RESOLUTION") {
-    return <span className="badge sla-overdue">RESOLUTION OVERDUE</span>;
+    return <span className="badge sla-overdue">SELESAI TERLAMBAT</span>;
   }
 
   if (state === "DONE") {
-    return <span className="badge sla-done">SLA COMPLETE</span>;
+    return <span className="badge sla-done">SELESAI</span>;
   }
 
-  return <span className="badge sla-track">ON TRACK</span>;
+  return <span className="badge sla-track">SESUAI TARGET</span>;
 }

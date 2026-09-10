@@ -13,6 +13,10 @@ type Master = {
   name: string;
 };
 
+type AreaMaster = Master & {
+  property_id: string | null;
+};
+
 export function CreateTicketPage({
   profile,
 }: {
@@ -22,6 +26,10 @@ export function CreateTicketPage({
     useState<Master[]>([]);
   const [categories, setCategories] =
     useState<Master[]>([]);
+  const [properties, setProperties] =
+    useState<Master[]>([]);
+  const [areas, setAreas] =
+    useState<AreaMaster[]>([]);
   const [loading, setLoading] =
     useState(true);
   const [error, setError] =
@@ -37,6 +45,8 @@ export function CreateTicketPage({
       const [
         departmentsResult,
         categoriesResult,
+        propertiesResult,
+        areasResult,
       ] = await Promise.all([
         supabase
           .from("departments")
@@ -48,29 +58,46 @@ export function CreateTicketPage({
           .select("id,name")
           .eq("is_active", true)
           .order("name"),
+        supabase
+          .from("hotel_properties")
+          .select("id,name")
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("hotel_areas")
+          .select("id,name,property_id")
+          .eq("is_active", true)
+          .order("name"),
       ]);
 
       if (!active) return;
 
-      if (
-        departmentsResult.error ||
-        categoriesResult.error
-      ) {
+      const firstError =
+        departmentsResult.error ??
+        categoriesResult.error ??
+        propertiesResult.error ??
+        areasResult.error;
+
+      if (firstError) {
         setError(
-          departmentsResult.error?.message ??
-            categoriesResult.error
-              ?.message ??
-            "Gagal mengambil master data."
+          firstError.message.includes("hotel_properties") ||
+            firstError.message.includes("hotel_areas")
+            ? "Master Property/Area belum tersedia. Jalankan upgrade_helpdesk_v5.sql di Supabase terlebih dahulu."
+            : firstError.message
         );
       }
 
       setDepartments(
-        (departmentsResult.data ??
-          []) as Master[]
+        (departmentsResult.data ?? []) as Master[]
       );
       setCategories(
-        (categoriesResult.data ??
-          []) as Master[]
+        (categoriesResult.data ?? []) as Master[]
+      );
+      setProperties(
+        (propertiesResult.data ?? []) as Master[]
+      );
+      setAreas(
+        (areasResult.data ?? []) as AreaMaster[]
       );
       setLoading(false);
     }
@@ -90,9 +117,7 @@ export function CreateTicketPage({
             Create Ticket
           </h1>
           <p className="page-subtitle">
-            Jelaskan masalah sejelas
-            mungkin agar tim IT dapat
-            merespons lebih cepat.
+            Jelaskan masalah dan lokasi dengan jelas agar tim IT dapat merespons lebih cepat.
           </p>
         </div>
       </div>
@@ -110,10 +135,10 @@ export function CreateTicketPage({
       ) : (
         <CreateTicketForm
           profile={profile}
-          departments={
-            departments
-          }
+          departments={departments}
           categories={categories}
+          properties={properties}
+          areas={areas}
         />
       )}
     </AppShell>

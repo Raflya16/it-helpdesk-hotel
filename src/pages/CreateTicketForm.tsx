@@ -15,6 +15,10 @@ type Master = {
   name: string;
 };
 
+type AreaMaster = Master & {
+  property_id: string | null;
+};
+
 type PreviewFile = {
   file: File;
   url: string;
@@ -38,10 +42,14 @@ export function CreateTicketForm({
   profile,
   departments,
   categories,
+  properties,
+  areas,
 }: {
   profile: Profile;
   departments: Master[];
   categories: Master[];
+  properties: Master[];
+  areas: AreaMaster[];
 }) {
   const { navigate } = useRouter();
   const fileInputRef =
@@ -57,6 +65,17 @@ export function CreateTicketForm({
   ] = useState<File[]>([]);
   const [previews, setPreviews] =
     useState<PreviewFile[]>([]);
+  const [selectedProperty, setSelectedProperty] =
+    useState("");
+  const [selectedArea, setSelectedArea] =
+    useState("");
+
+  const filteredAreas = areas.filter((area) => {
+    // Area tanpa property adalah area umum (mis. Ballroom / Meeting Room).
+    // Saat property belum dipilih, hanya area umum yang ditampilkan.
+    if (!selectedProperty) return area.property_id === null;
+    return area.property_id === null || area.property_id === selectedProperty;
+  });
 
   useEffect(() => {
     const newPreviews =
@@ -326,6 +345,17 @@ export function CreateTicketForm({
             "department_id"
           ) || ""
         ),
+        property_id:
+          String(
+            form.get(
+              "property_id"
+            ) || ""
+          ) || null,
+        area_id: String(
+          form.get(
+            "area_id"
+          ) || ""
+        ),
         location:
           String(
             form.get(
@@ -567,26 +597,74 @@ export function CreateTicketForm({
 
         <div>
           <label className="label">
-            Location
+            Property <span className="muted">(optional)</span>
+          </label>
+
+          <select
+            className="select"
+            name="property_id"
+            value={selectedProperty}
+            onChange={(event) => {
+              const nextProperty = event.target.value;
+              setSelectedProperty(nextProperty);
+
+              const currentArea = areas.find((item) => item.id === selectedArea);
+              if (currentArea && currentArea.property_id !== null && currentArea.property_id !== nextProperty) {
+                setSelectedArea("");
+              }
+            }}
+          >
+            <option value="">Tidak perlu / area umum</option>
+            {properties.map((property) => (
+              <option key={property.id} value={property.id}>
+                {property.name}
+              </option>
+            ))}
+          </select>
+          <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>
+            Kosongkan untuk area umum seperti Ballroom / Meeting Room.
+          </div>
+        </div>
+
+        <div>
+          <label className="label">
+            Area *
+          </label>
+
+          <select
+            className="select"
+            name="area_id"
+            required
+            value={selectedArea}
+            onChange={(event) => setSelectedArea(event.target.value)}
+          >
+            <option value="" disabled>
+              {selectedProperty ? "Pilih area" : "Pilih area umum"}
+            </option>
+            {filteredAreas.map((area) => (
+              <option key={area.id} value={area.id}>
+                {area.name}
+              </option>
+            ))}
+          </select>
+          <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>
+            Pilih property terlebih dahulu untuk area khusus seperti Front Office / Front Desk.
+          </div>
+        </div>
+
+        <div className="form-field-full">
+          <label className="label">
+            Location Detail
           </label>
 
           <input
             className="input"
             name="location"
-            placeholder="Front Desk / Ballroom / Room 305"
+            placeholder="Contoh: Room 812, Counter 2, Ballroom 1"
           />
-        </div>
-
-        <div>
-          <label className="label">
-            Device / Asset
-          </label>
-
-          <input
-            className="input"
-            name="device_name"
-            placeholder="FO-PC-02"
-          />
+          <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>
+            Opsional. Isi titik lokasi yang lebih spesifik di dalam area.
+          </div>
         </div>
 
         <div>

@@ -299,7 +299,7 @@ export function AppShell({
                     <Settings size={20} />
                     <div>
                       <strong>Settings</strong>
-                      <span>Department dan ticket category</span>
+                      <span>Department, category, property, dan area</span>
                     </div>
                     <ChevronRight size={17} />
                   </Link>

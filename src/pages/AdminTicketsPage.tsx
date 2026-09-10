@@ -47,6 +47,7 @@ type TicketRow = {
 };
 
 type MasterRow = { id: string; name: string };
+type AreaRow = MasterRow & { property_id: string | null };
 type AssigneeRow = { id: string; name: string };
 
 function positiveInt(value: string | null, fallback: number) {
@@ -71,6 +72,8 @@ export function AdminTicketsPage({
   const [priority, setPriority] = useState(params.get("priority") ?? "");
   const [department, setDepartment] = useState(params.get("department") ?? "");
   const [category, setCategory] = useState(params.get("category") ?? "");
+  const [property, setProperty] = useState(params.get("property") ?? "");
+  const [area, setArea] = useState(params.get("area") ?? "");
   const [assignee, setAssignee] = useState(params.get("assignee") ?? "");
   const [sla, setSla] = useState(params.get("sla") ?? "");
   const [dateFrom, setDateFrom] = useState(params.get("from") ?? "");
@@ -82,6 +85,8 @@ export function AdminTicketsPage({
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [departments, setDepartments] = useState<MasterRow[]>([]);
   const [categories, setCategories] = useState<MasterRow[]>([]);
+  const [properties, setProperties] = useState<MasterRow[]>([]);
+  const [areas, setAreas] = useState<AreaRow[]>([]);
   const [assignees, setAssignees] = useState<AssigneeRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -95,6 +100,8 @@ export function AdminTicketsPage({
     setPriority(current.get("priority") ?? "");
     setDepartment(current.get("department") ?? "");
     setCategory(current.get("category") ?? "");
+    setProperty(current.get("property") ?? "");
+    setArea(current.get("area") ?? "");
     setAssignee(current.get("assignee") ?? "");
     setSla(current.get("sla") ?? "");
     setDateFrom(current.get("from") ?? "");
@@ -105,29 +112,46 @@ export function AdminTicketsPage({
     let active = true;
 
     async function loadMasters() {
-      const [departmentResult, categoryResult, assigneeResult] =
-        await Promise.all([
-          supabase
-            .from("departments")
-            .select("id,name")
-            .eq("is_active", true)
-            .order("name"),
-          supabase
-            .from("ticket_categories")
-            .select("id,name")
-            .eq("is_active", true)
-            .order("name"),
-          supabase
-            .from("profiles")
-            .select("id,name")
-            .in("role", ["IT", "ADMIN"])
-            .eq("is_active", true)
-            .order("name"),
-        ]);
+      const [
+        departmentResult,
+        categoryResult,
+        propertyResult,
+        areaResult,
+        assigneeResult,
+      ] = await Promise.all([
+        supabase
+          .from("departments")
+          .select("id,name")
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("ticket_categories")
+          .select("id,name")
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("hotel_properties")
+          .select("id,name")
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("hotel_areas")
+          .select("id,name,property_id")
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("profiles")
+          .select("id,name")
+          .in("role", ["IT", "ADMIN"])
+          .eq("is_active", true)
+          .order("name"),
+      ]);
 
       if (!active) return;
       setDepartments((departmentResult.data ?? []) as MasterRow[]);
       setCategories((categoryResult.data ?? []) as MasterRow[]);
+      setProperties((propertyResult.data ?? []) as MasterRow[]);
+      setAreas((areaResult.data ?? []) as AreaRow[]);
       setAssignees((assigneeResult.data ?? []) as AssigneeRow[]);
     }
 
@@ -150,6 +174,8 @@ export function AdminTicketsPage({
       const priorityFilter = current.get("priority") ?? "";
       const departmentFilter = current.get("department") ?? "";
       const categoryFilter = current.get("category") ?? "";
+      const propertyFilter = current.get("property") ?? "";
+      const areaFilter = current.get("area") ?? "";
       const assigneeFilter = current.get("assignee") ?? "";
       const slaFilter = current.get("sla") ?? "";
       const fromFilter = current.get("from") ?? "";
@@ -209,6 +235,8 @@ export function AdminTicketsPage({
       if (priorityFilter) query = query.eq("priority", priorityFilter);
       if (departmentFilter) query = query.eq("department_id", departmentFilter);
       if (categoryFilter) query = query.eq("category_id", categoryFilter);
+      if (propertyFilter) query = query.eq("property_id", propertyFilter);
+      if (areaFilter) query = query.eq("area_id", areaFilter);
 
       if (assigneeFilter === "UNASSIGNED") {
         query = query.is("assigned_to", null);
@@ -277,6 +305,8 @@ export function AdminTicketsPage({
       priority,
       department,
       category,
+      property,
+      area,
       assignee,
       sla,
       from: dateFrom,
@@ -301,7 +331,7 @@ export function AdminTicketsPage({
         <div>
           <h1 className="page-title">Tickets</h1>
           <p className="page-subtitle">
-            Daftar seluruh laporan masalah IT hotel dengan filter operasional dan SLA.
+            Daftar seluruh laporan masalah IT hotel dengan filter operasional dan target waktu.
           </p>
         </div>
       </div>
@@ -371,6 +401,34 @@ export function AdminTicketsPage({
           </div>
 
           <div>
+            <label className="label">Property</label>
+            <select
+              className="select"
+              value={property}
+              onChange={(e) => {
+                const nextProperty = e.target.value;
+                setProperty(nextProperty);
+                if (area && !areas.some((item) => item.id === area && (item.property_id === null || item.property_id === nextProperty))) {
+                  setArea("");
+                }
+              }}
+            >
+              <option value="">All Property</option>
+              {properties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="label">Area</label>
+            <select className="select" value={area} onChange={(e) => setArea(e.target.value)}>
+              <option value="">All Area</option>
+              {areas
+                .filter((item) => !property || item.property_id === null || item.property_id === property)
+                .map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </div>
+
+          <div>
             <label className="label">Assigned To</label>
             <select className="select" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
               <option value="">All Assignee</option>
@@ -380,11 +438,11 @@ export function AdminTicketsPage({
           </div>
 
           <div>
-            <label className="label">SLA</label>
+            <label className="label">Target Waktu</label>
             <select className="select" value={sla} onChange={(e) => setSla(e.target.value)}>
-              <option value="">All SLA</option>
-              <option value="RESPONSE_OVERDUE">Response Overdue</option>
-              <option value="RESOLUTION_OVERDUE">Resolution Overdue</option>
+              <option value="">Semua target</option>
+              <option value="RESPONSE_OVERDUE">Respons terlambat</option>
+              <option value="RESOLUTION_OVERDUE">Penyelesaian terlambat</option>
             </select>
           </div>
 
@@ -421,7 +479,7 @@ export function AdminTicketsPage({
               <th>Reporter</th>
               <th>Assigned To</th>
               <th>Status</th>
-              <th>SLA</th>
+              <th>Target</th>
               <th className="ticket-action-heading">Aksi</th>
             </tr>
           </thead>
@@ -442,7 +500,7 @@ export function AdminTicketsPage({
                   <td data-label="Reporter">{relationName(ticket.reporter)}</td>
                   <td data-label="Assigned To">{ticket.assignee ? relationName(ticket.assignee) : <span className="ticket-unassigned">Unassigned</span>}</td>
                   <td data-label="Status"><StatusBadge value={ticket.status} /></td>
-                  <td data-label="SLA"><SlaBadge value={getSlaState(ticket)} /></td>
+                  <td data-label="Target"><SlaBadge value={getSlaState(ticket)} /></td>
                   <td data-label="Aksi">
                     <Link
                       to={`/tickets/${ticket.id}`}

@@ -44,8 +44,15 @@ type FinishedTicket = {
   created_at: string;
   first_response_at: string | null;
   finished_at: string | null;
+  sla_response_due_at: string | null;
+  sla_resolution_due_at: string | null;
+  resolution_note: string | null;
+  reopen_count: number;
+  location: string | null;
   category: NamedRelation;
   department: NamedRelation;
+  property: NamedRelation;
+  area: NamedRelation;
   reporter: NamedRelation;
   assignee: NamedRelation;
 };
@@ -615,6 +622,109 @@ async function generatePdf(
   );
 }
 
+function csvCell(value: unknown) {
+  const text = String(value ?? "").replace(/\r?\n/g, " ");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function slaResult(actual: string | null, due: string | null) {
+  if (!due) return "N/A";
+  if (!actual) return "BREACH";
+  return new Date(actual).getTime() <= new Date(due).getTime() ? "MET" : "BREACH";
+}
+
+function reportRows(tickets: FinishedTicket[]) {
+  return tickets.map((ticket) => [
+    ticket.ticket_number,
+    relationName(ticket.category),
+    relationName(ticket.department),
+    relationName(ticket.property),
+    relationName(ticket.area),
+    ticket.location ?? "",
+    relationName(ticket.reporter),
+    relationName(ticket.assignee, "Unassigned"),
+    ticket.priority,
+    formatDateTime(ticket.created_at),
+    formatDateTime(ticket.first_response_at),
+    formatDateTime(ticket.finished_at),
+    formatDuration(durationMs(ticket.created_at, ticket.first_response_at)),
+    formatDuration(durationMs(ticket.created_at, ticket.finished_at)),
+    slaResult(ticket.first_response_at, ticket.sla_response_due_at),
+    slaResult(ticket.finished_at, ticket.sla_resolution_due_at),
+    String(ticket.reopen_count ?? 0),
+    ticket.resolution_note ?? "",
+  ]);
+}
+
+const REPORT_HEADERS = [
+  "Ticket ID",
+  "Category",
+  "Department",
+  "Property",
+  "Area",
+  "Location Detail",
+  "Reporter",
+  "Assigned To",
+  "Priority",
+  "Created At",
+  "First Response",
+  "Finished At",
+  "Response Time",
+  "Resolution Time",
+  "Response Target",
+  "Resolution Target",
+  "Reopen Count",
+  "Resolution Note",
+];
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportCsv(tickets: FinishedTicket[], from: string, to: string) {
+  const rows = [REPORT_HEADERS, ...reportRows(tickets)];
+  const content = "\uFEFF" + rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+  downloadBlob(
+    new Blob([content], { type: "text/csv;charset=utf-8" }),
+    `it-helpdesk-report_${from}_${to}.csv`
+  );
+}
+
+function xmlEscape(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function exportExcel(tickets: FinishedTicket[], from: string, to: string) {
+  const rows = [REPORT_HEADERS, ...reportRows(tickets)];
+  const xmlRows = rows
+    .map(
+      (row) =>
+        `<Row>${row
+          .map((value) => `<Cell><Data ss:Type="String">${xmlEscape(value)}</Data></Cell>`)
+          .join("")}</Row>`
+    )
+    .join("");
+
+  const workbook = `<?xml version="1.0"?>\n<?mso-application progid="Excel.Sheet"?>\n<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="IT Helpdesk"><Table>${xmlRows}</Table></Worksheet></Workbook>`;
+
+  downloadBlob(
+    new Blob([workbook], { type: "application/vnd.ms-excel;charset=utf-8" }),
+    `it-helpdesk-report_${from}_${to}.xls`
+  );
+}
+
 export function ReportsPage({
   profile,
 }: {
@@ -702,6 +812,8 @@ export function ReportsPage({
                 *,
                 department:departments(name),
                 category:ticket_categories(name),
+                property:hotel_properties(name),
+                area:hotel_areas(name),
                 reporter:profiles!tickets_created_by_fkey(name),
                 assignee:profiles!tickets_assigned_to_fkey(name)
               `)
@@ -782,6 +894,27 @@ export function ReportsPage({
         )
       )
     );
+
+  const responseSlaTickets = tickets.filter((ticket) => ticket.sla_response_due_at);
+  const responseSlaMet = responseSlaTickets.filter(
+    (ticket) => slaResult(ticket.first_response_at, ticket.sla_response_due_at) === "MET"
+  ).length;
+  const responseSlaPercent = responseSlaTickets.length
+    ? Math.round((responseSlaMet / responseSlaTickets.length) * 100)
+    : null;
+
+  const resolutionSlaTickets = tickets.filter((ticket) => ticket.sla_resolution_due_at);
+  const resolutionSlaMet = resolutionSlaTickets.filter(
+    (ticket) => slaResult(ticket.finished_at, ticket.sla_resolution_due_at) === "MET"
+  ).length;
+  const resolutionSlaPercent = resolutionSlaTickets.length
+    ? Math.round((resolutionSlaMet / resolutionSlaTickets.length) * 100)
+    : null;
+
+  const reopenedTickets = tickets.filter((ticket) => (ticket.reopen_count ?? 0) > 0).length;
+  const reopenRate = tickets.length
+    ? Math.round((reopenedTickets / tickets.length) * 100)
+    : 0;
 
   function setLastDays(
     days: number
@@ -890,42 +1023,40 @@ export function ReportsPage({
           </h1>
 
           <p className="page-subtitle">
-            Lihat history problem yang
-            telah selesai dan export
-            laporan berdasarkan periode
-            tertentu.
+            Lihat KPI ticket selesai dan export laporan PDF, Excel, atau CSV berdasarkan periode tertentu.
           </p>
         </div>
       </div>
 
-      <section className="report-metrics-grid">
+      <section className="report-metrics-grid report-metrics-grid-extended">
         <div className="report-metric-card">
           <span>Ticket DONE</span>
-          <strong>
-            {loading ? "..." : tickets.length}
-          </strong>
+          <strong>{loading ? "..." : tickets.length}</strong>
         </div>
 
         <div className="report-metric-card">
           <span>Average Response</span>
-          <strong>
-            {loading
-              ? "..."
-              : formatDuration(
-                  averageResponseTime
-                )}
-          </strong>
+          <strong>{loading ? "..." : formatDuration(averageResponseTime)}</strong>
         </div>
 
         <div className="report-metric-card">
           <span>Average Resolution</span>
-          <strong>
-            {loading
-              ? "..."
-              : formatDuration(
-                  averageResolutionTime
-                )}
-          </strong>
+          <strong>{loading ? "..." : formatDuration(averageResolutionTime)}</strong>
+        </div>
+
+        <div className="report-metric-card">
+          <span>Respons Sesuai Target</span>
+          <strong>{loading ? "..." : responseSlaPercent === null ? "N/A" : `${responseSlaPercent}%`}</strong>
+        </div>
+
+        <div className="report-metric-card">
+          <span>Penyelesaian Sesuai Target</span>
+          <strong>{loading ? "..." : resolutionSlaPercent === null ? "N/A" : `${resolutionSlaPercent}%`}</strong>
+        </div>
+
+        <div className="report-metric-card">
+          <span>Reopen Rate</span>
+          <strong>{loading ? "..." : `${reopenRate}%`}</strong>
         </div>
       </section>
 
@@ -1091,23 +1222,34 @@ export function ReportsPage({
                   : `${tickets.length} ticket DONE ditemukan`}
               </div>
 
-              <button
-                className="btn btn-primary"
-                type="submit"
-                disabled={
-                  loading ||
-                  exporting ||
-                  tickets.length ===
-                    0
-                }
-              >
-                <FileDown
-                  size={17}
-                />
-                {exporting
-                  ? "Generating..."
-                  : "Export PDF"}
-              </button>
+              <div className="report-export-actions">
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  disabled={loading || tickets.length === 0}
+                  onClick={() => exportCsv(tickets, from, to)}
+                >
+                  <FileDown size={17} />
+                  Export CSV
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  disabled={loading || tickets.length === 0}
+                  onClick={() => exportExcel(tickets, from, to)}
+                >
+                  <FileDown size={17} />
+                  Export Excel
+                </button>
+                <button
+                  className="btn btn-primary"
+                  type="submit"
+                  disabled={loading || exporting || tickets.length === 0}
+                >
+                  <FileDown size={17} />
+                  {exporting ? "Generating..." : "Export PDF"}
+                </button>
+              </div>
             </div>
           </div>
         </form>

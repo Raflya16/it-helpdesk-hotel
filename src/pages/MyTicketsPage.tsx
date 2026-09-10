@@ -8,10 +8,8 @@ import { AppShell } from "../components/AppShell";
 import { Pagination } from "../components/Pagination";
 import {
   PriorityBadge,
-  SlaBadge,
   StatusBadge,
 } from "../components/status-badge";
-import { getSlaState } from "../lib/sla";
 import { supabase } from "../lib/supabase";
 import {
   relationName,
@@ -28,10 +26,6 @@ type TicketRow = {
   status: string;
   location: string | null;
   created_at: string;
-  first_response_at: string | null;
-  finished_at: string | null;
-  sla_response_due_at: string | null;
-  sla_resolution_due_at: string | null;
   category: NamedRelation;
   department: NamedRelation;
 };
@@ -86,10 +80,6 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
             status,
             location,
             created_at,
-            first_response_at,
-            finished_at,
-            sla_response_due_at,
-            sla_resolution_due_at,
             category:ticket_categories(name),
             department:departments(name)
           `,
@@ -196,15 +186,14 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
               <th>Category</th>
               <th>Priority</th>
               <th>Status</th>
-              <th>SLA</th>
               <th>Created</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="muted table-empty">Memuat ticket...</td></tr>
+              <tr><td colSpan={7} className="muted table-empty">Memuat ticket...</td></tr>
             ) : tickets.length === 0 ? (
-              <tr><td colSpan={8} className="muted table-empty">Belum ada ticket.</td></tr>
+              <tr><td colSpan={7} className="muted table-empty">Belum ada ticket.</td></tr>
             ) : (
               tickets.map((ticket) => (
                 <tr key={ticket.id}>
@@ -218,7 +207,6 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
                   <td data-label="Category">{relationName(ticket.category)}</td>
                   <td data-label="Priority"><PriorityBadge value={ticket.priority} /></td>
                   <td data-label="Status"><StatusBadge value={ticket.status} /></td>
-                  <td data-label="SLA"><SlaBadge value={getSlaState(ticket)} /></td>
                   <td data-label="Created">{new Date(ticket.created_at).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" })}</td>
                 </tr>
               ))

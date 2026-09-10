@@ -35,6 +35,8 @@ type Ticket = {
   status: string;
   category_id: string;
   department_id: string;
+  property_id: string | null;
+  area_id: string | null;
   location: string | null;
   device_name: string | null;
   created_by: string;
@@ -51,6 +53,8 @@ type Ticket = {
   sla_resolution_due_at: string | null;
   category: NamedRelation;
   department: NamedRelation;
+  property: NamedRelation;
+  area: NamedRelation;
   reporter: NamedRelation;
   assignee: NamedRelation;
 };
@@ -63,6 +67,7 @@ type CommentUser = {
 type CommentRow = {
   id: string;
   comment: string;
+  is_internal: boolean;
   created_at: string;
   user:
     | CommentUser
@@ -156,7 +161,15 @@ function historyText(
       return "membuat ticket";
 
     case "COMMENT_ADDED":
-      return "menambahkan komentar";
+      return "menambahkan balasan publik";
+
+    case "INTERNAL_NOTE_ADDED":
+      return "menambahkan Internal Note";
+
+    case "INTERNAL_ATTACHMENT_ADDED":
+      return item.new_value
+        ? `mengunggah attachment internal ${item.new_value}`
+        : "menambahkan attachment internal";
 
     case "ATTACHMENT_ADDED":
       return item.new_value
@@ -186,6 +199,15 @@ function historyText(
 
     case "DEPARTMENT_CHANGED":
       return "mengubah department ticket";
+
+    case "PROPERTY_CHANGED":
+      return "mengubah property ticket";
+
+    case "AREA_CHANGED":
+      return "mengubah area ticket";
+
+    case "LOCATION_CHANGED":
+      return "mengubah detail lokasi ticket";
 
     case "PRIORITY_CHANGED":
       return `mengubah priority ${
@@ -257,6 +279,8 @@ export function TicketDetailPage({
               *,
               category:ticket_categories(name),
               department:departments(name),
+              property:hotel_properties(name),
+              area:hotel_areas(name),
               reporter:profiles!tickets_created_by_fkey(name,email),
               assignee:profiles!tickets_assigned_to_fkey(name,email)
             `)
@@ -293,6 +317,7 @@ export function TicketDetailPage({
               .select(`
                 id,
                 comment,
+                is_internal,
                 created_at,
                 user:profiles(name,role)
               `)
@@ -633,25 +658,23 @@ export function TicketDetailPage({
                             }
                           >
                             <div className="comment-head">
-                              <span>
-                                <strong>
-                                  {user?.name ??
-                                    "User"}
-                                </strong>
-                                {" · "}
-                                {user?.role === "ADMIN" ||
-                                user?.role === "IT"
-                                  ? "IT"
-                                  : relationName(
-                                      ticket.department,
-                                      "Staff"
-                                    )}
+                              <span className="comment-author-line">
+                                <span>
+                                  <strong>
+                                    {user?.name ?? "User"}
+                                  </strong>
+                                  {" · "}
+                                  {user?.role === "ADMIN" || user?.role === "IT"
+                                    ? "IT"
+                                    : relationName(ticket.department, "Staff")}
+                                </span>
+                                {comment.is_internal && (
+                                  <span className="internal-note-badge">Internal Note</span>
+                                )}
                               </span>
 
                               <span>
-                                {localDate(
-                                  comment.created_at
-                                )}
+                                {localDate(comment.created_at)}
                               </span>
                             </div>
 
@@ -743,18 +766,32 @@ export function TicketDetailPage({
                   </dd>
 
                   <dt>
-                    Location
+                    Property
                   </dt>
                   <dd>
-                    {ticket.location ||
-                      "-"}
+                    {ticket.property_id ? relationName(ticket.property) : "Tidak diperlukan"}
                   </dd>
 
-                  <dt>Device</dt>
+                  <dt>
+                    Area
+                  </dt>
                   <dd>
-                    {ticket.device_name ||
-                      "-"}
+                    {relationName(ticket.area)}
                   </dd>
+
+                  <dt>
+                    Location Detail
+                  </dt>
+                  <dd>
+                    {ticket.location || "-"}
+                  </dd>
+
+                  {ticket.device_name && (
+                    <>
+                      <dt>Legacy Device</dt>
+                      <dd>{ticket.device_name}</dd>
+                    </>
+                  )}
 
                   <dt>
                     Reported by
@@ -827,7 +864,7 @@ export function TicketDetailPage({
                   </dd>
 
                   <dt>
-                    Response SLA
+                    Target Respons
                   </dt>
                   <dd>
                     {ticket.first_response_at
@@ -840,7 +877,7 @@ export function TicketDetailPage({
                   </dd>
 
                   <dt>
-                    Resolution SLA
+                    Target Selesai
                   </dt>
                   <dd>
                     {ticket.finished_at

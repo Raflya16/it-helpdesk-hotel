@@ -75,28 +75,38 @@ export function NotificationBell({
   useEffect(() => {
     void loadNotifications();
 
-    const intervalId =
-      window.setInterval(() => {
-        void loadNotifications();
-      }, 15000);
+    // Realtime gives near-instant notifications after V5 migration.
+    // Polling remains as a fallback when Realtime is unavailable.
+    const channel = supabase
+      .channel(`helpdesk-notifications-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          void loadNotifications();
+        }
+      )
+      .subscribe();
+
+    const intervalId = window.setInterval(() => {
+      void loadNotifications();
+    }, 30000);
 
     const onFocus = () => {
       void loadNotifications();
     };
 
-    window.addEventListener(
-      "focus",
-      onFocus
-    );
+    window.addEventListener("focus", onFocus);
 
     return () => {
-      window.clearInterval(
-        intervalId
-      );
-      window.removeEventListener(
-        "focus",
-        onFocus
-      );
+      void supabase.removeChannel(channel);
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);

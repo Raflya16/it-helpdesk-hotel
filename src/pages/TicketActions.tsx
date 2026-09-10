@@ -83,6 +83,7 @@ export function TicketActions({
     currentResolutionNote ?? ""
   );
   const [reopenReason, setReopenReason] = useState("");
+  const [commentMode, setCommentMode] = useState<"PUBLIC" | "INTERNAL">("PUBLIC");
 
   const fileLabel = useMemo(() => {
     if (files.length === 0) return "Tidak ada file dipilih";
@@ -170,6 +171,7 @@ export function TicketActions({
           ticket_id: ticketId,
           user_id: userId,
           comment: text || "Mengirim attachment.",
+          is_internal: isIT && commentMode === "INTERNAL",
         })
         .select("id")
         .single();
@@ -184,6 +186,7 @@ export function TicketActions({
 
       form.reset();
       setFiles([]);
+      setCommentMode("PUBLIC");
       await onUpdated();
     } catch (err) {
       console.error("Failed to add conversation update:", err);
@@ -274,11 +277,46 @@ export function TicketActions({
       {error && <div className="alert alert-error">{error}</div>}
 
       <form onSubmit={addComment} style={{ display: "grid", gap: 9 }}>
+        {isIT && (
+          <div className="conversation-mode-toggle" role="tablist" aria-label="Jenis conversation">
+            <button
+              type="button"
+              className={commentMode === "PUBLIC" ? "is-active" : ""}
+              onClick={() => setCommentMode("PUBLIC")}
+              disabled={busy}
+              role="tab"
+              aria-selected={commentMode === "PUBLIC"}
+            >
+              Public Reply
+            </button>
+            <button
+              type="button"
+              className={commentMode === "INTERNAL" ? "is-active is-internal" : ""}
+              onClick={() => setCommentMode("INTERNAL")}
+              disabled={busy}
+              role="tab"
+              aria-selected={commentMode === "INTERNAL"}
+            >
+              Internal Note
+            </button>
+          </div>
+        )}
+
+        {isIT && commentMode === "INTERNAL" && (
+          <div className="internal-note-hint">
+            Hanya IT/Admin yang dapat melihat catatan dan attachment ini. Reporter tidak menerima notification.
+          </div>
+        )}
+
         <textarea
           className="textarea"
           name="comment"
           disabled={busy}
-          placeholder="Tulis update, pertanyaan, atau jawaban..."
+          placeholder={
+            isIT && commentMode === "INTERNAL"
+              ? "Catatan troubleshooting, handover, atau informasi internal tim IT..."
+              : "Tulis update, pertanyaan, atau jawaban untuk reporter..."
+          }
           style={{ minHeight: 90 }}
           onKeyDown={(event) => {
             if (
@@ -313,7 +351,11 @@ export function TicketActions({
           </label>
           <span className="muted conversation-file-label">{fileLabel}</span>
           <button className="btn btn-primary" type="submit" disabled={busy}>
-            {busy ? "Saving..." : "Send Update"}
+            {busy
+              ? "Saving..."
+              : isIT && commentMode === "INTERNAL"
+                ? "Save Internal Note"
+                : "Send Reply"}
           </button>
         </div>
       </form>
@@ -390,7 +432,7 @@ export function TicketActions({
           <div>
             <strong>Reopen Ticket</strong>
             <p className="muted">
-              Ticket akan kembali ke WAITING dan SLA aktif kembali dari waktu reopen.
+              Ticket akan kembali ke WAITING dan target waktu aktif kembali dari waktu reopen.
             </p>
           </div>
           <textarea

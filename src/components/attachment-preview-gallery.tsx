@@ -38,8 +38,10 @@ export function AttachmentPreviewGallery({
   const [rotation, setRotation] =
     useState(0);
 
-  const [downloading, setDownloading] =
-    useState(false);
+  const [
+    downloading,
+    setDownloading,
+  ] = useState(false);
 
   const isActiveImage =
     active?.file_type.startsWith(
@@ -56,7 +58,9 @@ export function AttachmentPreviewGallery({
       event: KeyboardEvent
     ) {
       if (event.key === "Escape") {
-        closePreview();
+        setActive(null);
+        setZoom(1);
+        setRotation(0);
       }
     }
 
@@ -131,11 +135,18 @@ export function AttachmentPreviewGallery({
     );
   }
 
+  /*
+   * Tidak menggunakan % 360.
+   * Tujuannya agar animasi selalu
+   * bergerak searah jarum jam.
+   *
+   * 0 -> 90 -> 180 -> 270
+   * -> 360 -> 450 -> dst.
+   */
   function rotateImage() {
     setRotation(
       (current) =>
-        (current + 90) %
-        360
+        current + 90
     );
   }
 
@@ -176,7 +187,8 @@ export function AttachmentPreviewGallery({
           "a"
         );
 
-      link.href = objectUrl;
+      link.href =
+        objectUrl;
 
       link.download =
         attachment.file_name ||
@@ -199,11 +211,6 @@ export function AttachmentPreviewGallery({
         error
       );
 
-      /*
-       * Fallback:
-       * buka signed URL jika browser
-       * tidak mengizinkan blob download.
-       */
       const link =
         document.createElement(
           "a"
@@ -404,7 +411,7 @@ export function AttachmentPreviewGallery({
                 </span>
               </div>
 
-              {/* ACTION BUTTONS */}
+              {/* CONTROLS */}
               <div
                 style={{
                   display:
@@ -413,13 +420,13 @@ export function AttachmentPreviewGallery({
                     "center",
                   justifyContent:
                     "flex-end",
-                  gap: 8,
+                  gap: 10,
                   flexShrink: 0,
                 }}
               >
-                {/* IMAGE CONTROLS */}
                 {isActiveImage && (
                   <>
+                    {/* ZOOM OUT */}
                     <button
                       type="button"
                       onClick={
@@ -431,26 +438,29 @@ export function AttachmentPreviewGallery({
                       }
                       title="Zoom Out"
                       aria-label="Zoom Out"
-                      style={controlButtonStyle(
+                      style={circleButtonStyle(
                         zoom <=
                           0.5
                       )}
                     >
                       <ZoomOut
-                        size={18}
+                        size={19}
                       />
                     </button>
 
+                    {/* PERCENTAGE */}
                     <div
                       style={{
                         minWidth:
-                          48,
+                          50,
                         textAlign:
                           "center",
                         fontSize:
-                          12,
+                          14,
                         fontWeight:
                           700,
+                        color:
+                          "#111827",
                       }}
                     >
                       {Math.round(
@@ -460,6 +470,7 @@ export function AttachmentPreviewGallery({
                       %
                     </div>
 
+                    {/* ZOOM IN */}
                     <button
                       type="button"
                       onClick={
@@ -470,26 +481,27 @@ export function AttachmentPreviewGallery({
                       }
                       title="Zoom In"
                       aria-label="Zoom In"
-                      style={controlButtonStyle(
+                      style={circleButtonStyle(
                         zoom >= 3
                       )}
                     >
                       <ZoomIn
-                        size={18}
+                        size={19}
                       />
                     </button>
 
+                    {/* ROTATE */}
                     <button
                       type="button"
                       onClick={
                         rotateImage
                       }
-                      title="Rotate"
-                      aria-label="Rotate"
-                      style={controlButtonStyle()}
+                      title="Rotate Clockwise"
+                      aria-label="Rotate Clockwise"
+                      style={circleButtonStyle()}
                     >
                       <RotateCw
-                        size={18}
+                        size={20}
                       />
                     </button>
                   </>
@@ -506,28 +518,19 @@ export function AttachmentPreviewGallery({
                   disabled={
                     downloading
                   }
-                  title="Download"
+                  title={
+                    downloading
+                      ? "Downloading..."
+                      : "Download"
+                  }
                   aria-label="Download"
-                  style={{
-                    ...controlButtonStyle(
-                      downloading
-                    ),
-                    padding:
-                      "0 13px",
-                    gap: 7,
-                  }}
+                  style={circleButtonStyle(
+                    downloading
+                  )}
                 >
                   <Download
-                    size={17}
+                    size={20}
                   />
-
-                  <span
-                    className="attachment-download-text"
-                  >
-                    {downloading
-                      ? "Downloading..."
-                      : "Download"}
-                  </span>
                 </button>
 
                 {/* CLOSE */}
@@ -538,10 +541,10 @@ export function AttachmentPreviewGallery({
                   }
                   title="Close"
                   aria-label="Close"
-                  style={controlButtonStyle()}
+                  style={circleButtonStyle()}
                 >
                   <X
-                    size={20}
+                    size={21}
                   />
                 </button>
               </div>
@@ -589,15 +592,18 @@ export function AttachmentPreviewGallery({
                         "calc(100vh - 190px)",
                       objectFit:
                         "contain",
+
                       transform: `scale(${zoom}) rotate(${rotation}deg)`,
+
                       transformOrigin:
                         "center center",
+
                       transition:
-                        "transform 0.2s ease",
+                        "transform 0.25s ease",
+
                       cursor:
-                        zoom >
-                        1
-                          ? "zoom-out"
+                        zoom > 1
+                          ? "zoom-in"
                           : "default",
                     }}
                   />
@@ -689,7 +695,7 @@ export function AttachmentPreviewGallery({
                       borderRadius:
                         10,
                       background:
-                        "#173f72",
+                        "#111827",
                       color:
                         "#ffffff",
                       fontWeight:
@@ -700,7 +706,7 @@ export function AttachmentPreviewGallery({
                           : "pointer",
                       opacity:
                         downloading
-                          ? 0.6
+                          ? 0.5
                           : 1,
                     }}
                   >
@@ -722,26 +728,57 @@ export function AttachmentPreviewGallery({
   );
 }
 
-function controlButtonStyle(
+/*
+ * Tombol kontrol berbentuk lingkaran.
+ *
+ * Background tetap putih.
+ * Border hitam.
+ * Icon hitam.
+ */
+function circleButtonStyle(
   disabled = false
 ) {
   return {
-    height: 40,
-    minWidth: 40,
-    padding: "0 9px",
+    width: 44,
+    height: 44,
+
+    minWidth: 44,
+    minHeight: 44,
+
+    padding: 0,
+
     border:
-      "1px solid #dbe2ea",
-    borderRadius: 10,
-    background: "#f8fafc",
-    color: "#172033",
+    "1px solid #374151",
+
+    borderRadius:
+      "50%",
+
+    background:
+      "#ffffff",
+
+    color:
+      "#111827",
+
     cursor: disabled
       ? "not-allowed"
       : "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
+
+    display:
+      "inline-flex",
+
+    alignItems:
+      "center",
+
+    justifyContent:
+      "center",
+
+    flexShrink: 0,
+
     opacity: disabled
-      ? 0.45
+      ? 0.35
       : 1,
+
+    transition:
+      "background 0.15s ease, transform 0.15s ease",
   } as const;
 }

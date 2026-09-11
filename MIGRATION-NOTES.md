@@ -42,3 +42,6 @@ Run `supabase/upgrade_helpdesk_v5_2.sql` after V5.1. Property remains optional a
 
 ## V5.3
 Run `supabase/upgrade_helpdesk_v5_3.sql` after `upgrade_helpdesk_v5_2.sql` to enforce reporter department automatically from the user's profile.
+
+## V6 — Cancel / Duplicate + Error Handling
+Run `supabase/upgrade_helpdesk_v6.sql` after `upgrade_helpdesk_v5_3.sql`. V6 adds soft cancellation (`CANCELLED`), cancellation audit metadata, duplicate-ticket linking, and the `cancel_ticket` RPC. Cancelled tickets remain auditable but are hidden from active queues by default.

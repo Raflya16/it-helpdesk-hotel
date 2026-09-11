@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { RouterProvider } from "./router/Router";
 
 import "./styles/globals.css";
@@ -12,10 +13,12 @@ createRoot(
   document.getElementById("root")!
 ).render(
   <StrictMode>
-    <RouterProvider>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </RouterProvider>
+    <AppErrorBoundary>
+      <RouterProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </RouterProvider>
+    </AppErrorBoundary>
   </StrictMode>
 );

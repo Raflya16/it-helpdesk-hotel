@@ -6,11 +6,13 @@ import {
 
 import { AppShell } from "../components/AppShell";
 import { AttachmentPreviewGallery } from "../components/attachment-preview-gallery";
+import { ErrorState } from "../components/ErrorState";
 import {
   PriorityBadge,
   SlaBadge,
   StatusBadge,
 } from "../components/status-badge";
+import { friendlyErrorMessage } from "../lib/errors";
 import { localDate } from "../lib/format";
 import {
   durationMs,
@@ -49,6 +51,11 @@ type Ticket = {
   reopened_at: string | null;
   reopened_by: string | null;
   reopen_count: number;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+  cancel_reason_code: string | null;
+  cancel_reason: string | null;
+  duplicate_of: string | null;
   sla_response_due_at: string | null;
   sla_resolution_due_at: string | null;
   category: NamedRelation;
@@ -57,6 +64,8 @@ type Ticket = {
   area: NamedRelation;
   reporter: NamedRelation;
   assignee: NamedRelation;
+  canceller: NamedRelation;
+  duplicate_ticket: NamedRelation;
 };
 
 type CommentUser = {
@@ -151,6 +160,10 @@ function displayStatus(
     return "DONE";
   }
 
+  if (status === "CANCELLED") {
+    return "CANCELLED";
+  }
+
   return status || "-";
 }
 
@@ -191,6 +204,16 @@ function historyText(
       return item.description
         ? `membuka kembali ticket · ${item.description}`
         : "membuka kembali ticket";
+
+    case "TICKET_CANCELLED":
+      return item.description
+        ? `membatalkan ticket · ${item.description}`
+        : "membatalkan ticket";
+
+    case "TICKET_MARKED_DUPLICATE":
+      return item.description
+        ? `menandai ticket sebagai duplikat · ${item.description}`
+        : "menandai ticket sebagai duplikat";
 
     case "RESOLUTION_NOTE_UPDATED":
       return "memperbarui Resolution Note";
@@ -288,7 +311,9 @@ export function TicketDetailPage({
           property:hotel_properties(name),
           area:hotel_areas(name),
           reporter:profiles!tickets_created_by_fkey(name,email),
-          assignee:profiles!tickets_assigned_to_fkey(name,email)
+          assignee:profiles!tickets_assigned_to_fkey(name,email),
+          canceller:profiles!tickets_cancelled_by_fkey(name,email),
+          duplicate_ticket:tickets!tickets_duplicate_of_fkey(name:ticket_number)
         `)
         .eq("id", ticketId)
         .single();
@@ -524,6 +549,9 @@ export function TicketDetailPage({
           attachmentsResult.error,
           adminResult.error
         );
+        setError(
+          "Sebagian informasi ticket belum berhasil dimuat. Coba muat ulang jika Conversation, attachment, atau audit belum lengkap."
+        );
       }
 
       setLoading(false);
@@ -532,7 +560,16 @@ export function TicketDetailPage({
   );
 
   useEffect(() => {
-    void load();
+    void load().catch((loadError) => {
+      console.error("Failed to load ticket detail:", loadError);
+      setError(
+        friendlyErrorMessage(
+          loadError,
+          "Detail ticket tidak dapat dimuat. Silakan coba lagi."
+        )
+      );
+      setLoading(false);
+    });
   }, [load]);
 
   return (
@@ -542,9 +579,11 @@ export function TicketDetailPage({
           Memuat detail ticket...
         </div>
       ) : error && !ticket ? (
-        <div className="alert alert-error">
-          {error}
-        </div>
+        <ErrorState
+          title="Detail ticket tidak dapat dimuat"
+          message={error}
+          onRetry={() => void load()}
+        />
       ) : ticket ? (
         <>
           <div className="topbar">
@@ -596,6 +635,20 @@ export function TicketDetailPage({
             </div>
           </div>
 
+          {error && (
+            <div className="alert alert-error ticket-detail-warning">
+              <span>{error}</span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => void load()}
+                disabled={loading}
+              >
+                {loading ? "Memuat..." : "Coba Lagi"}
+              </button>
+            </div>
+          )}
+
           <div className="grid-2">
             <div
               style={{
@@ -629,10 +682,28 @@ export function TicketDetailPage({
                   </h2>
 
                   <p className="resolution-note-text">
-                    {
-                      ticket.resolution_note
-                    }
+                    {ticket.resolution_note}
                   </p>
+                </section>
+              )}
+
+              {ticket.status === "CANCELLED" && (
+                <section className="card cancelled-ticket-card">
+                  <h2 className="section-title">Ticket Dibatalkan</h2>
+                  <p className="cancelled-ticket-reason">
+                    {ticket.cancel_reason || "Ticket dibatalkan."}
+                  </p>
+                  <div className="cancelled-ticket-meta">
+                    {ticket.cancelled_at && (
+                      <span>{localDate(ticket.cancelled_at)}</span>
+                    )}
+                    {ticket.canceller && (
+                      <span>oleh {relationName(ticket.canceller)}</span>
+                    )}
+                    {ticket.duplicate_of && (
+                      <span>duplikat dari {relationName(ticket.duplicate_ticket)}</span>
+                    )}
+                  </div>
                 </section>
               )}
 
@@ -766,11 +837,20 @@ export function TicketDetailPage({
                   currentResolutionNote={
                     ticket.resolution_note
                   }
+                  currentFirstResponseAt={
+                    ticket.first_response_at
+                  }
                   isIT={isIT}
                   canReopen={
                     isIT ||
                     ticket.created_by ===
                       profile.id
+                  }
+                  canCancel={
+                    isIT ||
+                    (ticket.created_by === profile.id &&
+                      !ticket.first_response_at &&
+                      ["OPEN", "ASSIGNED"].includes(ticket.status))
                   }
                   itUsers={
                     itUsers
@@ -798,191 +878,722 @@ export function TicketDetailPage({
                   Ticket Information
                 </h2>
 
-                <dl className="kv">
-                  <dt>
-                    Category
-                  </dt>
-                  <dd>
-                    {relationName(
-                      ticket.category
-                    )}
-                  </dd>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 0,
+                  }}
+                >
+                  {/* PELAPOR */}
+                  <div
+                    style={{
+                      padding: "4px 0 18px",
+                      borderBottom: "1px solid #e8edf3",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: "#111827",
+                        marginBottom: 10,
+                      }}
+                    >
+                      Pelapor
+                    </div>
 
-                  <dt>
-                    Department
-                  </dt>
-                  <dd>
-                    {relationName(
-                      ticket.department
-                    )}
-                  </dd>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 700,
+                        color: "#111827",
+                      }}
+                    >
+                      {relationName(
+                        ticket.reporter,
+                        "-"
+                      )}
+                    </div>
 
-                  <dt>
-                    Property
-                  </dt>
-                  <dd>
-                    {ticket.property_id
-                      ? relationName(
-                          ticket.property
+                    <div
+                      style={{
+                        marginTop: 3,
+                        fontSize: 13,
+                        color: "#64748b",
+                      }}
+                    >
+                      {relationName(
+                        ticket.department,
+                        "-"
+                      )}
+                    </div>
+                  </div>
+
+                  {/* LOCATION */}
+                  <div
+                    style={{
+                      padding: "18px 0",
+                      borderBottom: "1px solid #e8edf3",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: "#111827",
+                        marginBottom: 12,
+                      }}
+                    >
+                      Location
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 12,
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "#94a3b8",
+                            marginBottom: 3,
+                          }}
+                        >
+                          Property
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "#1e293b",
+                          }}
+                        >
+                          {ticket.property_id
+                            ? relationName(
+                                ticket.property
+                              )
+                            : "Tidak ditentukan"}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "#94a3b8",
+                            marginBottom: 3,
+                          }}
+                        >
+                          Area
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "#1e293b",
+                          }}
+                        >
+                          {ticket.area_id
+                            ? relationName(
+                                ticket.area
+                              )
+                            : "Tidak ditentukan"}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "#94a3b8",
+                            marginBottom: 3,
+                          }}
+                        >
+                          Location Detail
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "#1e293b",
+                            overflowWrap: "anywhere",
+                          }}
+                        >
+                          {ticket.location ||
+                            "Tidak ditentukan"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* TICKET */}
+                  <div
+                    style={{
+                      padding: "18px 0",
+                      borderBottom: "1px solid #e8edf3",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: "#111827",
+                        marginBottom: 10,
+                      }}
+                    >
+                      Ticket
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 9,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                          gap: 14,
+                          alignItems: "start",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#64748b",
+                          }}
+                        >
+                          Category
+                        </span>
+
+                        <strong
+                          style={{
+                            fontSize: 12,
+                            color: "#1e293b",
+                            overflowWrap: "anywhere",
+                          }}
+                        >
+                          {relationName(
+                            ticket.category,
+                            "-"
+                          )}
+                        </strong>
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                          gap: 14,
+                          alignItems: "start",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#64748b",
+                          }}
+                        >
+                          Assigned to
+                        </span>
+
+                        <strong
+                          style={{
+                            fontSize: 12,
+                            color: "#1e293b",
+                            overflowWrap: "anywhere",
+                          }}
+                        >
+                          {relationName(
+                            ticket.assignee,
+                            "Unassigned"
+                          )}
+                        </strong>
+                      </div>
+
+                      {ticket.device_name && (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                            gap: 14,
+                            alignItems: "start",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                            }}
+                          >
+                            Legacy Device
+                          </span>
+
+                          <strong
+                            style={{
+                              fontSize: 12,
+                              color: "#1e293b",
+                              overflowWrap: "anywhere",
+                            }}
+                          >
+                            {ticket.device_name}
+                          </strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* WAKTU */}
+                  <div
+                    style={{
+                      padding: "18px 0",
+                      borderBottom: "1px solid #e8edf3",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: "#111827",
+                        marginBottom: 10,
+                      }}
+                    >
+                      Waktu
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 9,
+                      }}
+                    >
+                      {[
+                        [
+                          "Created",
+                          localDate(
+                            ticket.created_at
+                          ),
+                        ],
+                        [
+                          "Updated",
+                          localDate(
+                            ticket.updated_at
+                          ),
+                        ],
+                        [
+                          "First Response",
+                          ticket.first_response_at
+                            ? localDate(
+                                ticket.first_response_at
+                              )
+                            : "Belum direspons",
+                        ],
+                        [
+                          "Response Time",
+                          ticket.first_response_at
+                            ? formatDuration(
+                                durationMs(
+                                  ticket.created_at,
+                                  ticket.first_response_at
+                                )
+                              )
+                            : "-",
+                        ],
+                        [
+                          "Resolution Time",
+                          ticket.status ===
+                          "CANCELLED"
+                            ? "-"
+                            : formatDuration(
+                                durationMs(
+                                  ticket.created_at,
+                                  ticket.finished_at
+                                )
+                              ),
+                        ],
+                      ].map(
+                        ([label, value]) => (
+                          <div
+                            key={label}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                              gap: 14,
+                              alignItems: "start",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "#64748b",
+                              }}
+                            >
+                              {label}
+                            </span>
+
+                            <strong
+                              style={{
+                                fontSize: 12,
+                                color: "#1e293b",
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              {value}
+                            </strong>
+                          </div>
                         )
-                      : "Tidak ditentukan"}
-                  </dd>
+                      )}
+                    </div>
+                  </div>
 
-                  <dt>
-                    Area
-                  </dt>
-                  <dd>
-                    {ticket.area_id
-                      ? relationName(
-                          ticket.area
-                        )
-                      : "Tidak ditentukan"}
-                  </dd>
+                  {/* TARGET WAKTU */}
+                  <div
+                    style={{
+                      padding: "18px 0",
+                      borderBottom:
+                        ticket.status === "CANCELLED" ||
+                        ticket.reopen_count > 0
+                          ? "1px solid #e8edf3"
+                          : "0",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: "#111827",
+                        marginBottom: 12,
+                      }}
+                    >
+                      Target Waktu
+                    </div>
 
-                  <dt>
-                    Location Detail
-                  </dt>
-                  <dd>
-                    {ticket.location ||
-                      "-"}
-                  </dd>
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 12,
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "#94a3b8",
+                            marginBottom: 4,
+                          }}
+                        >
+                          Respons
+                        </div>
 
-                  {ticket.device_name && (
-                    <>
-                      <dt>
-                        Legacy Device
-                      </dt>
+                        <strong
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                            color: "#1e293b",
+                          }}
+                        >
+                          {ticket.status ===
+                          "CANCELLED"
+                            ? "Dibatalkan"
+                            : ticket.first_response_at
+                              ? `Sesuai target · ${localDate(
+                                  ticket.first_response_at
+                                )}`
+                              : ticket.sla_response_due_at
+                                ? `${localDate(
+                                    ticket.sla_response_due_at
+                                  )} · ${formatDueDistance(
+                                    ticket.sla_response_due_at
+                                  )}`
+                                : "-"}
+                        </strong>
+                      </div>
 
-                      <dd>
-                        {
-                          ticket.device_name
-                        }
-                      </dd>
-                    </>
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "#94a3b8",
+                            marginBottom: 4,
+                          }}
+                        >
+                          Selesai
+                        </div>
+
+                        <strong
+                          style={{
+                            display: "block",
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                            color: "#1e293b",
+                          }}
+                        >
+                          {ticket.status ===
+                            "CANCELLED" &&
+                          ticket.cancelled_at
+                            ? `Dibatalkan · ${localDate(
+                                ticket.cancelled_at
+                              )}`
+                            : ticket.finished_at
+                              ? `Selesai · ${localDate(
+                                  ticket.finished_at
+                                )}`
+                              : ticket.sla_resolution_due_at
+                                ? `${localDate(
+                                    ticket.sla_resolution_due_at
+                                  )} · ${formatDueDistance(
+                                    ticket.sla_resolution_due_at
+                                  )}`
+                                : "-"}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* PEMBATALAN */}
+                  {ticket.status === "CANCELLED" && (
+                    <div
+                      style={{
+                        padding: "18px 0",
+                        borderBottom:
+                          ticket.reopen_count > 0
+                            ? "1px solid #e8edf3"
+                            : "0",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 800,
+                          color: "#111827",
+                          marginBottom: 10,
+                        }}
+                      >
+                        Pembatalan
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: 9,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                            gap: 14,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                            }}
+                          >
+                            Alasan
+                          </span>
+
+                          <strong
+                            style={{
+                              fontSize: 12,
+                              color: "#1e293b",
+                              overflowWrap: "anywhere",
+                            }}
+                          >
+                            {ticket.cancel_reason ||
+                              "-"}
+                          </strong>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                            gap: 14,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                            }}
+                          >
+                            Dibatalkan
+                          </span>
+
+                          <strong
+                            style={{
+                              fontSize: 12,
+                              color: "#1e293b",
+                            }}
+                          >
+                            {ticket.cancelled_at
+                              ? localDate(
+                                  ticket.cancelled_at
+                                )
+                              : "-"}
+                          </strong>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                            gap: 14,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                            }}
+                          >
+                            Oleh
+                          </span>
+
+                          <strong
+                            style={{
+                              fontSize: 12,
+                              color: "#1e293b",
+                            }}
+                          >
+                            {relationName(
+                              ticket.canceller,
+                              "-"
+                            )}
+                          </strong>
+                        </div>
+
+                        {ticket.duplicate_of && (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                              gap: 14,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "#64748b",
+                              }}
+                            >
+                              Duplicate Of
+                            </span>
+
+                            <strong
+                              style={{
+                                fontSize: 12,
+                                color: "#1e293b",
+                              }}
+                            >
+                              {relationName(
+                                ticket.duplicate_ticket,
+                                "-"
+                              )}
+                            </strong>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   )}
 
-                  <dt>
-                    Reported by
-                  </dt>
-                  <dd>
-                    {relationName(
-                      ticket.reporter
-                    )}
-                  </dd>
+                  {/* REOPEN */}
+                  {ticket.reopen_count > 0 && (
+                    <div
+                      style={{
+                        padding: "18px 0 0",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 800,
+                          color: "#111827",
+                          marginBottom: 10,
+                        }}
+                      >
+                        Reopen
+                      </div>
 
-                  <dt>
-                    Assigned to
-                  </dt>
-                  <dd>
-                    {relationName(
-                      ticket.assignee,
-                      "Unassigned"
-                    )}
-                  </dd>
+                      <div
+                        style={{
+                          display: "grid",
+                          gap: 9,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                            gap: 14,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "#64748b",
+                            }}
+                          >
+                            Total Reopen
+                          </span>
 
-                  <dt>
-                    Created
-                  </dt>
-                  <dd>
-                    {localDate(
-                      ticket.created_at
-                    )}
-                  </dd>
+                          <strong
+                            style={{
+                              fontSize: 12,
+                              color: "#1e293b",
+                            }}
+                          >
+                            {ticket.reopen_count}
+                          </strong>
+                        </div>
 
-                  <dt>
-                    Updated
-                  </dt>
-                  <dd>
-                    {localDate(
-                      ticket.updated_at
-                    )}
-                  </dd>
+                        {ticket.reopened_at && (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(90px, 0.8fr) minmax(0, 1.2fr)",
+                              gap: 14,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "#64748b",
+                              }}
+                            >
+                              Terakhir
+                            </span>
 
-                  <dt>
-                    First Response
-                  </dt>
-                  <dd>
-                    {ticket.first_response_at
-                      ? localDate(
-                          ticket.first_response_at
-                        )
-                      : "Belum direspons"}
-                  </dd>
-
-                  <dt>
-                    Response Time
-                  </dt>
-                  <dd>
-                    {ticket.first_response_at
-                      ? formatDuration(
-                          durationMs(
-                            ticket.created_at,
-                            ticket.first_response_at
-                          )
-                        )
-                      : "-"}
-                  </dd>
-
-                  <dt>
-                    Resolution Time
-                  </dt>
-                  <dd>
-                    {formatDuration(
-                      durationMs(
-                        ticket.created_at,
-                        ticket.finished_at
-                      )
-                    )}
-                  </dd>
-
-                  <dt>
-                    Target Respons
-                  </dt>
-                  <dd>
-                    {ticket.first_response_at
-                      ? `Met · ${localDate(
-                          ticket.first_response_at
-                        )}`
-                      : ticket.sla_response_due_at
-                        ? `${localDate(
-                            ticket.sla_response_due_at
-                          )} · ${formatDueDistance(
-                            ticket.sla_response_due_at
-                          )}`
-                        : "-"}
-                  </dd>
-
-                  <dt>
-                    Target Selesai
-                  </dt>
-                  <dd>
-                    {ticket.finished_at
-                      ? `Complete · ${localDate(
-                          ticket.finished_at
-                        )}`
-                      : ticket.sla_resolution_due_at
-                        ? `${localDate(
-                            ticket.sla_resolution_due_at
-                          )} · ${formatDueDistance(
-                            ticket.sla_resolution_due_at
-                          )}`
-                        : "-"}
-                  </dd>
-
-                  <dt>
-                    Reopen Count
-                  </dt>
-                  <dd>
-                    {ticket.reopen_count ||
-                      0}
-
-                    {ticket.reopened_at
-                      ? ` · terakhir ${localDate(
-                          ticket.reopened_at
-                        )}`
-                      : ""}
-                  </dd>
-                </dl>
+                            <strong
+                              style={{
+                                fontSize: 12,
+                                color: "#1e293b",
+                              }}
+                            >
+                              {localDate(
+                                ticket.reopened_at
+                              )}
+                            </strong>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </section>
 
               <section className="card">

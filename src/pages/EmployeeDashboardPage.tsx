@@ -11,11 +11,13 @@ import {
 } from "react";
 
 import { AppShell } from "../components/AppShell";
+import { ErrorState } from "../components/ErrorState";
 import { NotificationBell } from "../components/NotificationBell";
 import {
   PriorityBadge,
   StatusBadge,
 } from "../components/status-badge";
+import { friendlyErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import type { Profile } from "../lib/types";
 import { Link } from "../router/Router";
@@ -38,12 +40,17 @@ export function EmployeeDashboardPage({
     useState<TicketRow[]>([]);
   const [loading, setLoading] =
     useState(true);
+  const [error, setError] =
+    useState<string | null>(null);
+  const [reloadKey, setReloadKey] =
+    useState(0);
 
   useEffect(() => {
     let active = true;
 
     async function load() {
       setLoading(true);
+      setError(null);
 
       const { data, error } =
         await supabase
@@ -55,6 +62,7 @@ export function EmployeeDashboardPage({
             "created_by",
             profile.id
           )
+          .neq("status", "CANCELLED")
           .order("created_at", {
             ascending: false,
           })
@@ -68,6 +76,12 @@ export function EmployeeDashboardPage({
           error
         );
         setTickets([]);
+        setError(
+          friendlyErrorMessage(
+            error,
+            "Dashboard ticket tidak dapat dimuat. Silakan coba lagi."
+          )
+        );
       } else {
         setTickets(
           (data ?? []) as TicketRow[]
@@ -82,7 +96,7 @@ export function EmployeeDashboardPage({
     return () => {
       active = false;
     };
-  }, [profile.id]);
+  }, [profile.id, reloadKey]);
 
   const openCount =
     tickets.filter(
@@ -152,6 +166,14 @@ export function EmployeeDashboardPage({
           </div>
         </div>
       </header>
+
+      {error && (
+        <ErrorState
+          title="Dashboard tidak dapat dimuat"
+          message={error}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      )}
 
       <section className="employee-help-card">
         <div>

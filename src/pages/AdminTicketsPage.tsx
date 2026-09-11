@@ -6,6 +6,7 @@ import {
 } from "react";
 
 import { AppShell } from "../components/AppShell";
+import { ErrorState } from "../components/ErrorState";
 import { Pagination } from "../components/Pagination";
 import {
   PriorityBadge,
@@ -16,6 +17,7 @@ import {
   formatDateTime,
   problemSummary,
 } from "../lib/format";
+import { friendlyErrorMessage } from "../lib/errors";
 import { getSlaState } from "../lib/sla";
 import { supabase } from "../lib/supabase";
 import {
@@ -91,6 +93,7 @@ export function AdminTicketsPage({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   useEffect(() => {
@@ -230,6 +233,11 @@ export function AdminTicketsPage({
         query = query.in("status", ["IN_PROGRESS", "WAITING_USER"]);
       } else if (statusFilter === "FINISH") {
         query = query.in("status", ["RESOLVED", "CLOSED"]);
+      } else if (statusFilter === "CANCELLED") {
+        query = query.eq("status", "CANCELLED");
+      } else {
+        // Cancelled ticket disembunyikan dari antrean default agar IT tidak salah menangani.
+        query = query.neq("status", "CANCELLED");
       }
 
       if (priorityFilter) query = query.eq("priority", priorityFilter);
@@ -249,12 +257,12 @@ export function AdminTicketsPage({
         query = query
           .is("first_response_at", null)
           .lt("sla_response_due_at", now)
-          .not("status", "in", "(RESOLVED,CLOSED)");
+          .not("status", "in", "(RESOLVED,CLOSED,CANCELLED)");
       } else if (slaFilter === "RESOLUTION_OVERDUE") {
         query = query
           .is("finished_at", null)
           .lt("sla_resolution_due_at", now)
-          .not("status", "in", "(RESOLVED,CLOSED)");
+          .not("status", "in", "(RESOLVED,CLOSED,CANCELLED)");
       }
 
       if (fromFilter) {
@@ -269,7 +277,12 @@ export function AdminTicketsPage({
       if (!active) return;
 
       if (queryError) {
-        setError(queryError.message);
+        setError(
+          friendlyErrorMessage(
+            queryError,
+            "Daftar ticket tidak dapat dimuat. Silakan coba lagi."
+          )
+        );
         setTickets([]);
         setTotal(0);
       } else {
@@ -283,7 +296,7 @@ export function AdminTicketsPage({
     return () => {
       active = false;
     };
-  }, [search]);
+  }, [search, reloadKey]);
 
   function buildQuery(overrides: Record<string, string | null>) {
     const next = new URLSearchParams(search);
@@ -371,6 +384,7 @@ export function AdminTicketsPage({
               <option value="OPEN">WAITING</option>
               <option value="IN_PROGRESS">IN PROGRESS</option>
               <option value="FINISH">DONE</option>
+              <option value="CANCELLED">CANCELLED</option>
             </select>
           </div>
 
@@ -405,13 +419,7 @@ export function AdminTicketsPage({
             <select
               className="select"
               value={property}
-              onChange={(e) => {
-                const nextProperty = e.target.value;
-                setProperty(nextProperty);
-                if (area && !areas.some((item) => item.id === area && (item.property_id === null || item.property_id === nextProperty))) {
-                  setArea("");
-                }
-              }}
+              onChange={(e) => setProperty(e.target.value)}
             >
               <option value="">All Property</option>
               {properties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -422,9 +430,9 @@ export function AdminTicketsPage({
             <label className="label">Area</label>
             <select className="select" value={area} onChange={(e) => setArea(e.target.value)}>
               <option value="">All Area</option>
-              {areas
-                .filter((item) => !property || item.property_id === null || item.property_id === property)
-                .map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              {areas.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
             </select>
           </div>
 
@@ -464,8 +472,13 @@ export function AdminTicketsPage({
         </div>
       </form>
 
-      {error && <div className="alert alert-error">{error}</div>}
-
+      {error ? (
+        <ErrorState
+          title="Daftar ticket tidak dapat dimuat"
+          message={error}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      ) : (
       <div className="card table-wrap">
         <table className="ticket-list-table responsive-data-table admin-ticket-table">
           <thead>
@@ -517,6 +530,7 @@ export function AdminTicketsPage({
           </tbody>
         </table>
       </div>
+      )}
 
       <Pagination
         page={page}

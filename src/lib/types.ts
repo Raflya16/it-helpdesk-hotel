@@ -6,7 +6,8 @@ export type TicketStatus =
   | "IN_PROGRESS"
   | "WAITING_USER"
   | "RESOLVED"
-  | "CLOSED";
+  | "CLOSED"
+  | "CANCELLED";
 
 export type TicketPriority =
   | "LOW"

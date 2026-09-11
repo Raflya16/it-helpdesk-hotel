@@ -112,6 +112,15 @@ export function StatusBadge({
     );
   }
 
+
+  if (status === "CANCELLED") {
+    return (
+      <span className="badge badge-cancelled">
+        CANCELLED
+      </span>
+    );
+  }
+
   if (
     status === "RESOLVED" ||
     status === "CLOSED" ||
@@ -146,6 +155,10 @@ export function SlaBadge({
 
   if (state === "OVERDUE_RESOLUTION") {
     return <span className="badge sla-overdue">SELESAI TERLAMBAT</span>;
+  }
+
+  if (state === "CANCELLED") {
+    return <span className="badge sla-cancelled">DIBATALKAN</span>;
   }
 
   if (state === "DONE") {

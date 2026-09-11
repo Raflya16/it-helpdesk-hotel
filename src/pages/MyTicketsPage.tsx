@@ -5,11 +5,13 @@ import {
 } from "react";
 
 import { AppShell } from "../components/AppShell";
+import { ErrorState } from "../components/ErrorState";
 import { Pagination } from "../components/Pagination";
 import {
   PriorityBadge,
   StatusBadge,
 } from "../components/status-badge";
+import { friendlyErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import {
   relationName,
@@ -47,6 +49,7 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const current = new URLSearchParams(search);
@@ -103,13 +106,24 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
         query = query.in("status", ["IN_PROGRESS", "WAITING_USER"]);
       } else if (statusFilter === "FINISH") {
         query = query.in("status", ["RESOLVED", "CLOSED"]);
+      } else if (statusFilter === "CANCELLED") {
+        query = query.eq("status", "CANCELLED");
+      } else {
+        // Ticket yang dihapus user tidak memenuhi antrean/list aktif.
+        // Histori tetap dapat dilihat lewat filter CANCELLED.
+        query = query.neq("status", "CANCELLED");
       }
 
       const { data, error: queryError, count } = await query.range(from, to);
       if (!active) return;
 
       if (queryError) {
-        setError(queryError.message);
+        setError(
+          friendlyErrorMessage(
+            queryError,
+            "Daftar ticket tidak dapat dimuat. Silakan coba lagi."
+          )
+        );
         setTickets([]);
         setTotal(0);
       } else {
@@ -123,7 +137,7 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
     return () => {
       active = false;
     };
-  }, [profile.id, search]);
+  }, [profile.id, search, reloadKey]);
 
   function applyFilter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -168,14 +182,20 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
             <option value="OPEN">WAITING</option>
             <option value="IN_PROGRESS">IN PROGRESS</option>
             <option value="FINISH">DONE</option>
+            <option value="CANCELLED">CANCELLED</option>
           </select>
           <button className="btn btn-primary" type="submit">Filter</button>
           <button className="btn btn-secondary" type="button" onClick={() => navigate("/tickets")}>Reset</button>
         </div>
       </form>
 
-      {error && <div className="alert alert-error">{error}</div>}
-
+      {error ? (
+        <ErrorState
+          title="My Tickets tidak dapat dimuat"
+          message={error}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      ) : (
       <div className="card table-wrap">
         <table className="responsive-data-table my-ticket-table">
           <thead>
@@ -214,6 +234,7 @@ export function MyTicketsPage({ profile }: { profile: Profile }) {
           </tbody>
         </table>
       </div>
+      )}
 
       <Pagination
         page={page}

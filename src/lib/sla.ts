@@ -2,7 +2,8 @@ export type SlaState =
   | "OVERDUE_RESPONSE"
   | "OVERDUE_RESOLUTION"
   | "ON_TRACK"
-  | "DONE";
+  | "DONE"
+  | "CANCELLED";
 
 export function durationMs(
   start: string | null,
@@ -82,6 +83,10 @@ export function getSlaState(ticket: {
   sla_response_due_at?: string | null;
   sla_resolution_due_at?: string | null;
 }, now = Date.now()): SlaState {
+  if (String(ticket.status || "").toUpperCase() === "CANCELLED") {
+    return "CANCELLED";
+  }
+
   if (isDoneStatus(ticket.status) || ticket.finished_at) {
     return "DONE";
   }

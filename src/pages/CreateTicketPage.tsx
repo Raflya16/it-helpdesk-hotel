@@ -4,6 +4,8 @@ import {
 } from "react";
 
 import { AppShell } from "../components/AppShell";
+import { ErrorState } from "../components/ErrorState";
+import { friendlyErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import type { Profile } from "../lib/types";
 import { CreateTicketForm } from "./CreateTicketForm";
@@ -34,6 +36,8 @@ export function CreateTicketPage({
     useState(true);
   const [error, setError] =
     useState<string | null>(null);
+  const [reloadKey, setReloadKey] =
+    useState(0);
 
   useEffect(() => {
     let active = true;
@@ -81,8 +85,11 @@ export function CreateTicketPage({
         setError(
           firstError.message.includes("hotel_properties") ||
             firstError.message.includes("hotel_areas")
-            ? "Master Property/Area belum tersedia. Jalankan upgrade_helpdesk_v5.sql di Supabase terlebih dahulu."
-            : firstError.message
+            ? "Master Property/Area belum tersedia. Pastikan migration Supabase sudah dijalankan."
+            : friendlyErrorMessage(
+                firstError,
+                "Data form ticket tidak dapat dimuat. Silakan coba lagi."
+              )
         );
       }
 
@@ -106,7 +113,7 @@ export function CreateTicketPage({
     return () => {
       active = false;
     };
-  }, []);
+  }, [reloadKey]);
 
   return (
     <AppShell profile={profile}>
@@ -121,13 +128,13 @@ export function CreateTicketPage({
         </div>
       </div>
 
-      {error && (
-        <div className="alert alert-error">
-          {error}
-        </div>
-      )}
-
-      {loading ? (
+      {error ? (
+        <ErrorState
+          title="Form ticket tidak dapat dimuat"
+          message={error}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      ) : loading ? (
         <div className="card muted">
           Memuat form...
         </div>

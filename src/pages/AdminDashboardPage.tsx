@@ -17,11 +17,13 @@ import {
 } from "react";
 
 import { AppShell } from "../components/AppShell";
+import { ErrorState } from "../components/ErrorState";
 import { NotificationBell } from "../components/NotificationBell";
 import {
   PriorityBadge,
   StatusBadge,
 } from "../components/status-badge";
+import { friendlyErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import {
   relationName,
@@ -123,6 +125,16 @@ function updateDescription(update: RecentUpdateRow) {
     case "ATTACHMENT_ADDED":
       return "menambahkan lampiran pada ticket";
 
+    case "TICKET_CANCELLED":
+      return update.description
+        ? `membatalkan ticket · ${update.description}`
+        : "membatalkan ticket";
+
+    case "TICKET_MARKED_DUPLICATE":
+      return update.description
+        ? `menandai ticket duplikat · ${update.description}`
+        : "menandai ticket sebagai duplikat";
+
     default:
       return update.description || "memperbarui ticket";
   }
@@ -190,6 +202,10 @@ export function AdminDashboardPage({
     useState<TicketRow[]>([]);
   const [loading, setLoading] =
     useState(true);
+  const [error, setError] =
+    useState<string | null>(null);
+  const [reloadKey, setReloadKey] =
+    useState(0);
   const [search, setSearch] =
     useState("");
   const [recentUpdates, setRecentUpdates] =
@@ -202,6 +218,7 @@ export function AdminDashboardPage({
 
     async function load() {
       setLoading(true);
+      setError(null);
 
       const { data, error } =
         await supabase
@@ -217,6 +234,7 @@ export function AdminDashboardPage({
             reporter:profiles!tickets_created_by_fkey(name),
             assignee:profiles!tickets_assigned_to_fkey(name)
           `)
+          .neq("status", "CANCELLED")
           .order("created_at", {
             ascending: false,
           })
@@ -230,6 +248,12 @@ export function AdminDashboardPage({
           error
         );
         setTickets([]);
+        setError(
+          friendlyErrorMessage(
+            error,
+            "Dashboard IT tidak dapat dimuat. Silakan coba lagi."
+          )
+        );
       } else {
         setTickets(
           (data ??
@@ -245,7 +269,7 @@ export function AdminDashboardPage({
     return () => {
       active = false;
     };
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     let active = true;
@@ -269,6 +293,8 @@ export function AdminDashboardPage({
           "PRIORITY_CHANGED",
           "COMMENT_ADDED",
           "ATTACHMENT_ADDED",
+          "TICKET_CANCELLED",
+          "TICKET_MARKED_DUPLICATE",
         ])
         .order("created_at", { ascending: false })
         .limit(30);
@@ -449,6 +475,14 @@ export function AdminDashboardPage({
           </div>
         </div>
       </header>
+
+      {error && (
+        <ErrorState
+          title="Dashboard IT tidak dapat dimuat"
+          message={error}
+          onRetry={() => setReloadKey((value) => value + 1)}
+        />
+      )}
 
       <section className="dashboard-summary-grid">
         <div className="dashboard-summary-card">

@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 
+import { friendlyErrorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
 import type { Profile } from "../lib/types";
 import { useRouter } from "../router/Router";
@@ -277,6 +278,22 @@ export function CreateTicketForm({
     );
   }
 
+  async function cancelIncompleteTicket(
+    ticketId: string,
+    reason: string
+  ) {
+    const { error } = await supabase.rpc("cancel_ticket", {
+      p_ticket_id: ticketId,
+      p_reason_code: "OTHER",
+      p_reason_detail: reason,
+      p_duplicate_ticket_number: null,
+    });
+
+    if (error) {
+      console.error("Failed to cancel incomplete ticket:", error);
+    }
+  }
+
   async function submit(
     event: FormEvent<HTMLFormElement>
   ) {
@@ -290,10 +307,7 @@ export function CreateTicketForm({
       return;
     }
 
-    if (
-      selectedFiles.length ===
-      0
-    ) {
+    if (selectedFiles.length === 0) {
       setMessage(
         "Photo / Video Evidence wajib diisi. Lampirkan minimal satu foto atau video."
       );
@@ -301,184 +315,103 @@ export function CreateTicketForm({
       return;
     }
 
-    const validationError =
-      validateFiles(
-        selectedFiles
-      );
-
+    const validationError = validateFiles(selectedFiles);
     if (validationError) {
-      setMessage(
-        validationError
-      );
+      setMessage(validationError);
       return;
     }
 
     setBusy(true);
 
-    const form =
-      new FormData(
-        event.currentTarget
-      );
+    try {
+      const form = new FormData(event.currentTarget);
+      const description = String(form.get("description") || "").trim();
 
-    const description =
-      String(
-        form.get(
-          "description"
-        ) || ""
-      ).trim();
+      const autoTitle =
+        description.length > 60
+          ? `${description.slice(0, 60).trim()}...`
+          : description;
 
-    const autoTitle =
-      description.length > 60
-        ? `${description
-            .slice(0, 60)
-            .trim()}...`
-        : description;
+      const { data: ticket, error: createError } = await supabase
+        .from("tickets")
+        .insert({
+          title: autoTitle,
+          description,
+          category_id: String(form.get("category_id") || ""),
+          property_id: String(form.get("property_id") || "") || null,
+          area_id: String(form.get("area_id") || "") || null,
+          location: String(form.get("location") || "").trim() || null,
+          device_name: String(form.get("device_name") || "").trim() || null,
+          priority: String(form.get("priority") || "MEDIUM"),
+          created_by: profile.id,
+        })
+        .select("id,ticket_number")
+        .single();
 
-    const {
-      data: ticket,
-      error,
-    } = await supabase
-      .from("tickets")
-      .insert({
-        title: autoTitle,
-        description,
-        category_id: String(
-          form.get(
-            "category_id"
-          ) || ""
-        ),
-        property_id:
-          String(
-            form.get(
-              "property_id"
-            ) || ""
-          ) || null,
-        area_id:
-          String(
-            form.get(
-              "area_id"
-            ) || ""
-          ) || null,
-        location:
-          String(
-            form.get(
-              "location"
-            ) || ""
-          ).trim() ||
-          null,
-        device_name:
-          String(
-            form.get(
-              "device_name"
-            ) || ""
-          ).trim() ||
-          null,
-        priority: String(
-          form.get(
-            "priority"
-          ) || "MEDIUM"
-        ),
-        created_by:
-          profile.id,
-      })
-      .select(
-        "id,ticket_number"
-      )
-      .single();
+      if (createError || !ticket) {
+        throw createError ?? new Error("Ticket gagal dibuat.");
+      }
 
-    if (
-      error ||
-      !ticket
-    ) {
-      setMessage(
-        error?.message ??
-          "Gagal membuat ticket."
-      );
-      setBusy(false);
-      return;
-    }
+      for (const file of selectedFiles) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `${profile.id}/${ticket.id}/${crypto.randomUUID()}-${safeName}`;
 
-    for (
-      const file of
-      selectedFiles
-    ) {
-      const safeName =
-        file.name.replace(
-          /[^a-zA-Z0-9._-]/g,
-          "_"
-        );
-
-      const path =
-        `${profile.id}/` +
-        `${ticket.id}/` +
-        `${crypto.randomUUID()}-${safeName}`;
-
-      const upload =
-        await supabase.storage
-          .from(
-            "ticket-attachments"
-          )
+        const { error: uploadError } = await supabase.storage
+          .from("ticket-attachments")
           .upload(path, file, {
-            contentType:
-              file.type,
+            contentType: file.type,
             upsert: false,
           });
 
-      if (
-        upload.error
-      ) {
-        setMessage(
-          `Ticket dibuat, tetapi upload ${file.name} gagal: ${upload.error.message}`
-        );
-        setBusy(false);
-        navigate(
-          `/tickets/${ticket.id}`
-        );
-        return;
-      }
+        if (uploadError) {
+          await cancelIncompleteTicket(
+            String(ticket.id),
+            `Pembuatan ticket dibatalkan karena upload evidence ${file.name} gagal.`
+          );
+          throw new Error(
+            `Upload ${file.name} gagal. Ticket tidak dimasukkan ke antrean aktif agar tidak terjadi laporan tanpa evidence. Silakan coba lagi.`
+          );
+        }
 
-      const meta =
-        await supabase
-          .from(
-            "ticket_attachments"
-          )
+        const { error: metaError } = await supabase
+          .from("ticket_attachments")
           .insert({
-            ticket_id:
-              ticket.id,
-            file_name:
-              file.name,
-            storage_path:
-              path,
-            file_type:
-              file.type,
-            file_size:
-              file.size,
-            uploaded_by:
-              profile.id,
+            ticket_id: ticket.id,
+            file_name: file.name,
+            storage_path: path,
+            file_type: file.type,
+            file_size: file.size,
+            uploaded_by: profile.id,
           });
 
-      if (meta.error) {
-        await supabase.storage
-          .from(
-            "ticket-attachments"
-          )
-          .remove([path]);
+        if (metaError) {
+          await supabase.storage
+            .from("ticket-attachments")
+            .remove([path]);
 
-        setMessage(
-          `Ticket dibuat, tetapi metadata attachment gagal: ${meta.error.message}`
-        );
-        setBusy(false);
-        navigate(
-          `/tickets/${ticket.id}`
-        );
-        return;
+          await cancelIncompleteTicket(
+            String(ticket.id),
+            `Pembuatan ticket dibatalkan karena metadata evidence ${file.name} gagal disimpan.`
+          );
+
+          throw new Error(
+            `Evidence ${file.name} gagal disimpan. Ticket tidak dimasukkan ke antrean aktif. Silakan coba lagi.`
+          );
+        }
       }
-    }
 
-    setBusy(false);
-    navigate(
-      `/tickets/${ticket.id}`
-    );
+      navigate(`/tickets/${ticket.id}`);
+    } catch (err) {
+      console.error("Failed to create ticket:", err);
+      setMessage(
+        friendlyErrorMessage(
+          err,
+          "Ticket tidak dapat dibuat. Periksa koneksi dan coba kembali."
+        )
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

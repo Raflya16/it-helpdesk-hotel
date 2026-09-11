@@ -65,7 +65,7 @@ type Ticket = {
   reporter: NamedRelation;
   assignee: NamedRelation;
   canceller: NamedRelation;
-  duplicate_ticket: NamedRelation;
+  duplicate_ticket_number: string | null;
 };
 
 type CommentUser = {
@@ -312,8 +312,7 @@ export function TicketDetailPage({
           area:hotel_areas(name),
           reporter:profiles!tickets_created_by_fkey(name,email),
           assignee:profiles!tickets_assigned_to_fkey(name,email),
-          canceller:profiles!tickets_cancelled_by_fkey(name,email),
-          duplicate_ticket:tickets!tickets_duplicate_of_fkey(name:ticket_number)
+          canceller:profiles!tickets_cancelled_by_fkey(name,email)
         `)
         .eq("id", ticketId)
         .single();
@@ -331,6 +330,33 @@ export function TicketDetailPage({
 
         setLoading(false);
         return;
+      }
+
+      let duplicateTicketNumber: string | null = null;
+
+      if (ticketData.duplicate_of) {
+        const {
+          data: duplicateData,
+          error: duplicateError,
+        } = await supabase
+          .from("tickets")
+          .select("ticket_number")
+          .eq(
+            "id",
+            ticketData.duplicate_of
+          )
+          .maybeSingle();
+
+        if (duplicateError) {
+          console.error(
+            "Failed to load duplicate ticket:",
+            duplicateError
+          );
+        } else {
+          duplicateTicketNumber =
+            duplicateData?.ticket_number ??
+            null;
+        }
       }
 
       const [
@@ -465,9 +491,11 @@ export function TicketDetailPage({
           )
         );
 
-      setTicket(
-        ticketData as unknown as Ticket
-      );
+      setTicket({
+        ...(ticketData as unknown as Ticket),
+        duplicate_ticket_number:
+          duplicateTicketNumber,
+      });
 
       setComments(
         (commentsResult.data ??
@@ -701,7 +729,11 @@ export function TicketDetailPage({
                       <span>oleh {relationName(ticket.canceller)}</span>
                     )}
                     {ticket.duplicate_of && (
-                      <span>duplikat dari {relationName(ticket.duplicate_ticket)}</span>
+                      <span>
+                        duplikat dari{" "}
+                        {ticket.duplicate_ticket_number ??
+                          "ticket terkait"}
+                      </span>
                     )}
                   </div>
                 </section>
@@ -1500,10 +1532,8 @@ export function TicketDetailPage({
                                 color: "#1e293b",
                               }}
                             >
-                              {relationName(
-                                ticket.duplicate_ticket,
-                                "-"
-                              )}
+                              {ticket.duplicate_ticket_number ??
+                                "Ticket terkait"}
                             </strong>
                           </div>
                         )}
